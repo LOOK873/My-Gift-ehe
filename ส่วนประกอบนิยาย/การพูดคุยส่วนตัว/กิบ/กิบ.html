@@ -1,0 +1,2711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Instagram DM Chat Export">
+    <!-- Defense in depth: the export must never make network requests beyond images. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://*.cdninstagram.com https://*.fbcdn.net https://*.giphy.com https://media.giphy.com data:; form-action 'none'; base-uri 'none';">
+    <meta name="theme-color" content="#000000">
+    <title>Instagram DM - Chat</title>
+    
+    <style>
+        :root {
+            --bg-primary: #000000;
+            --bg-bubble-received: #262626;
+            --bg-bubble-sent: #3797F0;
+            --bg-input: #1c1c1e;
+            --bg-reply-preview: rgba(255, 255, 255, 0.05);
+            --bg-reply-hover: rgba(255, 255, 255, 0.1);
+            --bg-popup: #1c1c1e;
+            --bg-lightbox: rgba(0, 0, 0, 0.95);
+            --bg-search-highlight: rgba(255, 200, 0, 0.3);
+            --text-primary: #ffffff;
+            --text-secondary: #8e8e93;
+            --text-tertiary: #6b6b70;
+            --text-reply-sender: #f0f0f0;
+            --text-reply-preview: #c0c0c0;
+            --accent-blue: #3797F0;
+            --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            --bubble-radius: 20px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: var(--font-family);
+            -webkit-font-smoothing: antialiased;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .phone-frame {
+            width: 100%;
+            max-width: 430px;
+            height: 100vh;
+            max-height: 932px;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            border-radius: 0;
+        }
+
+        @media (min-width: 431px) {
+            .phone-frame {
+                border-radius: 28px;
+                height: 92vh;
+                max-height: 880px;
+                margin: 20px;
+            }
+        }
+
+        @media (max-width: 430px) {
+            .phone-frame {
+                max-width: 100%;
+                height: 100vh;
+                max-height: 100vh;
+                border-radius: 0;
+                margin: 0;
+            }
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 22px 8px 22px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 600;
+            flex-shrink: 0;
+            z-index: 15;
+        }
+        .status-bar .time {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .status-bar .status-date {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .chat-header {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px 10px 8px;
+            background: var(--bg-primary);
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+            gap: 6px;
+            position: relative;
+            z-index: 10;
+            transition: all 0.3s;
+        }
+        .chat-header.search-mode {
+            padding: 6px 8px;
+            gap: 4px;
+        }
+        .back-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .back-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 2.2;
+        }
+        .header-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            transition: all 0.3s;
+        }
+        .chat-header.search-mode .header-avatar {
+            width: 0;
+            height: 0;
+            opacity: 0;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .header-info {
+            flex: 1;
+            min-width: 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .chat-header.search-mode .header-info {
+            flex: 0;
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        .header-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .header-status {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .header-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .header-action-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+        .header-action-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .header-action-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 1.8;
+        }
+        .header-action-btn.cancel-search-btn {
+            display: none;
+            font-size: 14px;
+            color: #fff;
+            font-weight: 500;
+            padding: 0 12px;
+            width: auto;
+            white-space: nowrap;
+        }
+        .chat-header.search-mode .cancel-search-btn {
+            display: flex;
+        }
+        .chat-header.search-mode .hide-on-search {
+            display: none;
+        }
+
+        .search-bar {
+            flex: 1;
+            display: none;
+            align-items: center;
+            background: #1c1c1e;
+            border-radius: 10px;
+            padding: 0 12px;
+            height: 36px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .chat-header.search-mode .search-bar {
+            display: flex;
+        }
+        .search-bar svg {
+            width: 16px;
+            height: 16px;
+            stroke: #8e8e93;
+            fill: none;
+            stroke-width: 2;
+            flex-shrink: 0;
+        }
+        .search-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 14px;
+            padding: 0 8px;
+            font-family: var(--font-family);
+        }
+        .search-input::placeholder {
+            color: #6b6b70;
+        }
+        .search-nav {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+        .search-nav-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 14px;
+        }
+        .search-nav-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .search-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: default;
+        }
+        .search-count {
+            font-size: 11px;
+            color: #8e8e93;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 8px 12px 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+            background: var(--bg-primary);
+        }
+        /* Anchor short conversations to the bottom, like the real app */
+        .messages-container > :first-child {
+            margin-top: auto;
+        }
+        .messages-container::-webkit-scrollbar {
+            width: 0;
+        }
+
+        .date-separator {
+            display: flex;
+            justify-content: center;
+            margin: 16px 0 12px;
+            flex-shrink: 0;
+        }
+        .date-separator span {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            padding: 5px 14px;
+            border-radius: 20px;
+            border: 0.5px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .message-row {
+            display: flex;
+            flex-direction: column;
+            max-width: 72%;
+            margin-bottom: 2px;
+            position: relative;
+        }
+        .message-row.has-reaction {
+            margin-bottom: 16px;
+        }
+        .sender-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin: 2px 0 2px 12px;
+        }
+        .permalink-chip {
+            display: inline-block;
+            margin: 3px 4px 0;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+        .permalink-chip:hover {
+            text-decoration: underline;
+        }
+        .sent .permalink-chip {
+            align-self: flex-end;
+        }
+        .message-row.sent {
+            align-self: flex-end;
+            align-items: flex-end;
+        }
+        .message-row.received {
+            align-self: flex-start;
+            align-items: flex-start;
+        }
+        .message-row.action-log {
+            align-self: center;
+            align-items: center;
+            max-width: 90%;
+        }
+        .message-row.search-highlight {
+            background: var(--bg-search-highlight);
+            border-radius: 12px;
+            animation: highlightPulse 0.6s ease;
+        }
+        @keyframes highlightPulse {
+            0%, 100% { background: var(--bg-search-highlight); }
+            50% { background: rgba(255, 200, 0, 0.5); }
+        }
+        .search-highlight-text {
+            background: #FFC800;
+            color: #000;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+
+        .reply-preview {
+            display: flex;
+            align-items: stretch;
+            margin-bottom: 4px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-reply-preview);
+            cursor: pointer;
+            border: 0.5px solid rgba(255, 255, 255, 0.06);
+            min-height: 44px;
+            transition: background 0.15s;
+        }
+        .reply-preview:hover {
+            background: var(--bg-reply-hover);
+        }
+        .reply-preview:active {
+            transform: scale(0.98);
+        }
+        .reply-preview .reply-bar {
+            width: 4px;
+            min-width: 4px;
+            align-self: stretch;
+            margin: 8px 0 8px 8px;
+            border-radius: 2px;
+        }
+        .sent-reply .reply-bar {
+            background: var(--accent-blue);
+            box-shadow: 0 0 8px rgba(55, 151, 240, 0.3);
+        }
+        .received-reply .reply-bar {
+            background: #8e8e93;
+            box-shadow: 0 0 8px rgba(142, 142, 147, 0.3);
+        }
+        .reply-preview .reply-content {
+            padding: 8px 12px 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex: 1;
+            min-width: 0;
+        }
+        .reply-preview .reply-sender {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-reply-sender);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .reply-preview .reply-icon {
+            font-size: 12px;
+        }
+        .reply-preview .reply-text {
+            font-size: 12px;
+            color: var(--text-reply-preview);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: var(--bubble-radius);
+            font-size: 15px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+            position: relative;
+        }
+        .sent .message-bubble {
+            background: var(--bg-bubble-sent);
+            color: #ffffff;
+            border-bottom-right-radius: 6px;
+        }
+        .received .message-bubble {
+            background: var(--bg-bubble-received);
+            color: #ffffff;
+            border-bottom-left-radius: 6px;
+        }
+        .action-log .message-bubble {
+            background: transparent;
+            color: var(--text-tertiary);
+            font-size: 12px;
+            padding: 4px 10px;
+            text-align: center;
+        }
+        /* Bracketed placeholders ([Voice message], [Story share], ...) */
+        .message-bubble.meta {
+            font-style: italic;
+            font-size: 14px;
+            opacity: 0.85;
+        }
+
+        .media-bubble {
+            padding: 3px;
+            border-radius: 18px;
+            overflow: hidden;
+            max-width: 260px;
+            cursor: pointer;
+            position: relative;
+        }
+        .sent .media-bubble {
+            background: var(--bg-bubble-sent);
+            border-bottom-right-radius: 6px;
+        }
+        .received .media-bubble {
+            background: var(--bg-bubble-received);
+            border-bottom-left-radius: 6px;
+        }
+        .media-bubble img {
+            width: 100%;
+            height: auto;
+            max-height: 350px;
+            object-fit: cover;
+            border-radius: 15px;
+            display: block;
+            background: #1a1a1a;
+        }
+
+        .reel-share-bubble {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 18px;
+            cursor: pointer;
+            max-width: 260px;
+        }
+        .sent .reel-share-bubble {
+            background: var(--bg-bubble-sent);
+            border-bottom-right-radius: 6px;
+        }
+        .received .reel-share-bubble {
+            background: var(--bg-bubble-received);
+            border-bottom-left-radius: 6px;
+        }
+        .reel-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #f09433, #dc2743);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .reel-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: #fff;
+        }
+        .reel-label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .reel-owner {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .reaction-badge {
+            position: absolute;
+            bottom: -12px;
+            right: 10px;
+            background: #1c1c1e;
+            border-radius: 12px;
+            padding: 3px 6px;
+            font-size: 13px;
+            font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', var(--font-family);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            z-index: 3;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            transition: transform 0.15s;
+        }
+        .reaction-badge:active {
+            transform: scale(1.1);
+        }
+        .received .reaction-badge {
+            right: auto;
+            left: 10px;
+        }
+        .reaction-badge .count-display {
+            font-size: 11px;
+            color: #aaa;
+            margin-left: 2px;
+        }
+
+        .message-timestamp {
+            font-size: 10px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+            padding: 0 6px;
+            opacity: 0.55;
+        }
+        .has-reaction .message-timestamp {
+            margin-top: 14px;
+        }
+        .sent .message-timestamp {
+            text-align: right;
+            margin-right: 2px;
+        }
+        .received .message-timestamp {
+            text-align: left;
+            margin-left: 2px;
+        }
+
+        .reaction-popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .reaction-popup-overlay.active {
+            display: flex;
+        }
+        .reaction-popup {
+            background: var(--bg-popup);
+            border-radius: 16px;
+            padding: 20px;
+            min-width: 240px;
+            max-width: 300px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            animation: slideUp 0.2s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .reaction-popup h3 {
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .reactor-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .reactor-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 0;
+        }
+        .reactor-emoji {
+            font-size: 24px;
+            width: 36px;
+            text-align: center;
+        }
+        .reactor-name {
+            font-size: 15px;
+            color: #e0e0e0;
+        }
+        .close-btn {
+            display: block;
+            margin: 16px auto 0;
+            padding: 8px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #fff;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .lightbox-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-lightbox);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .lightbox-overlay.active {
+            display: flex;
+        }
+        .lightbox-image {
+            max-width: 95%;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 2001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-close:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .input-bar {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px 12px;
+            background: var(--bg-primary);
+            border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .input-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .input-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .input-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 1.8;
+        }
+        .input-field-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            background: var(--bg-input);
+            border-radius: 22px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 0 6px;
+            min-height: 40px;
+        }
+        .input-field {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 15px;
+            padding: 8px 4px;
+            font-family: var(--font-family);
+        }
+        .input-field::placeholder {
+            color: #6b6b70;
+        }
+        .input-emoji-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            font-size: 18px;
+            opacity: 0.7;
+        }
+
+        .scroll-bottom-btn {
+            position: absolute;
+            bottom: 70px;
+            right: 16px;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #262626;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            transition: all 0.2s;
+            opacity: 0;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .scroll-bottom-btn.visible {
+            opacity: 0.9;
+            pointer-events: auto;
+        }
+        .scroll-bottom-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 2.5;
+        }
+        
+        .info-bar {
+            padding: 6px 16px;
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+            font-size: 10px;
+            letter-spacing: 0.02em;
+            color: var(--text-tertiary);
+            display: flex;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .info-bar-link {
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .info-bar-link:hover {
+            color: var(--accent-blue);
+        }
+        /* ============ Print / Save-as-PDF ============ */
+        @media print {
+            * {
+                transition: none !important;
+                animation: none !important;
+            }
+            /* Keep the chat look on paper: dark column, real bubble colors */
+            .phone-frame, .phone-frame * {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            body {
+                background: #fff;
+                display: block;
+                min-height: 0;
+            }
+            .phone-frame {
+                max-width: 560px;
+                width: 100%;
+                height: auto;
+                max-height: none;
+                margin: 0 auto;
+                border-radius: 0;
+                box-shadow: none;
+                overflow: visible;
+            }
+            .messages-container {
+                overflow: visible;
+            }
+            .messages-container > :first-child {
+                margin-top: 0;
+            }
+            .message-row {
+                break-inside: avoid;
+            }
+            /* Hide interactive chrome; the status bar stays — it carries the export time */
+            .back-btn, .header-actions, .search-bar,
+            .input-bar, .scroll-bottom-btn,
+            .reaction-popup-overlay, .lightbox-overlay {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-frame" id="phoneFrame">
+        <div class="status-bar">
+            <span class="time" id="statusTime">6:45 PM</span>
+            <span class="status-date" id="statusDate">Sep 30, 2026</span>
+        </div>
+
+        <div class="chat-header" id="chatHeader">
+            <div class="back-btn" title="Back">
+                <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="header-avatar" id="headerAvatar">IU</div>
+            <div class="header-info" id="headerInfo">
+                <div class="header-name" id="headerName">Instagram User</div>
+                <div class="header-status" id="headerStatus">Active 228 days ago</div>
+            </div>
+            
+            <div class="search-bar" id="searchBar">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke="#8e8e93" stroke-width="2" fill="none"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="#8e8e93" stroke-width="2"/></svg>
+                <input type="text" class="search-input" id="searchInput" placeholder="Search messages or dates...">
+                <div class="search-nav">
+                    <span class="search-count" id="searchCount">0/0</span>
+                    <button class="search-nav-btn" id="searchUpBtn" disabled>▲</button>
+                    <button class="search-nav-btn" id="searchDownBtn" disabled>▼</button>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <div class="header-action-btn" id="searchBtn" title="Search">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke="#fff" stroke-width="1.8" fill="none"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="#fff" stroke-width="1.8"/></svg>
+                </div>
+                <div class="header-action-btn cancel-search-btn" id="cancelSearchBtn">Cancel</div>
+                <div class="header-action-btn hide-on-search" title="Call">
+                    <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" stroke="#fff" stroke-width="1.8" fill="none"/></svg>
+                </div>
+                <div class="header-action-btn hide-on-search" title="Video">
+                    <svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17" fill="none" stroke="#fff" stroke-width="1.8"/><rect x="1" y="5" width="15" height="14" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+                </div>
+                <div class="header-action-btn hide-on-search" id="printBtn" title="Save as PDF">
+                    <svg viewBox="0 0 24 24"><path d="M12 3v10m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-bar">
+            <span id="infoBarText">137 messages · Exported with</span>&nbsp;<a class="info-bar-link" href="https://chromewebstore.google.com/detail/instagrow-%E2%80%94-creator-toolk/nakalihddjdkpgbekjhajjammlbkemoj" target="_blank" rel="noopener">Instagrow</a>
+        </div>
+
+        <div class="messages-container" id="messagesContainer"></div>
+
+        <div class="scroll-bottom-btn" id="scrollBottomBtn">
+            <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+
+        <div class="reaction-popup-overlay" id="reactionPopupOverlay">
+            <div class="reaction-popup">
+                <h3 id="reactionPopupTitle">Reactions</h3>
+                <div class="reactor-list" id="reactorList"></div>
+                <button class="close-btn" id="closeReactionPopup">Close</button>
+            </div>
+        </div>
+
+        <div class="lightbox-overlay" id="lightboxOverlay">
+            <button class="lightbox-close" id="lightboxClose">✕</button>
+            <img class="lightbox-image" id="lightboxImage" alt="Preview">
+        </div>
+
+        <div class="input-bar">
+            <div class="input-btn" title="Camera">
+                <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="15" rx="3" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+            </div>
+            <div class="input-field-wrapper">
+                <input type="text" class="input-field" placeholder="Message..." id="messageInput" readonly>
+                <div class="input-emoji-btn">😊</div>
+            </div>
+            <div class="input-btn" title="Microphone">
+                <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CHAT DATA (injected from extension)
+        // ============================================
+        let chatData = null;
+        let extractionStats = null;
+        try {
+            chatData = {
+  "extractedAt": "2026-09-30T11:43:11.110Z",
+  "chatWith": "Instagram User",
+  "threadId": "340282366841710301244259592632743450136",
+  "participants": [
+    "me (53844247607)",
+    "gizf_ty"
+  ],
+  "messageCount": 137,
+  "dateRange": {
+    "oldest": "2025-12-13 07:39:23 UTC",
+    "newest": "2026-02-14 07:52:57 UTC"
+  },
+  "messages": [
+    {
+      "id": "32569784643107969295880766089068544",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-13 07:39:23 UTC",
+      "timestampUnix": 1765611563,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-3.fna.fbcdn.net/v/t1.15752-9/597565425_1902530244004053_8996283635056130629_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=104&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=gK2z0tG41SUQ7kNvwHzDotx&_nc_oc=AdqS3pgaT9gCH5WD4qOWRbN7tLr5puIjUR-FgchqpaJIMrBWTa01SUgkY9acKPzsh_c&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-3.fna&_nc_ss=7a22e&oh=03_Q7cD6gHYvLoQa1J5rnYj08yiLXDCiFnD1MNQObykOg3knmUplg&oe=6AE4682B&ig_cache_key=MTkwMjUzMDI0MDY3MDcyMA%3D%3D.2-ccb7-5-w2360h1640.f"
+    },
+    {
+      "id": "32569784692855702116182896173645824",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-13 07:39:26 UTC",
+      "timestampUnix": 1765611566,
+      "type": "text",
+      "text": "ใครอะ"
+    },
+    {
+      "id": "32569787824517975229175774949933056",
+      "sender": "me",
+      "timestamp": "2025-12-13 07:42:15 UTC",
+      "timestampUnix": 1765611735,
+      "type": "text",
+      "text": "ต้นน้ำ"
+    },
+    {
+      "id": "32569788227115692774180861889216512",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-13 07:42:37 UTC",
+      "timestampUnix": 1765611757,
+      "type": "text",
+      "text": "โอเคมันรู้ไอจีนีได้ไง"
+    },
+    {
+      "id": "32569788464681791179544143023046656",
+      "sender": "me",
+      "timestamp": "2025-12-13 07:42:50 UTC",
+      "timestampUnix": 1765611770,
+      "type": "text",
+      "text": "บ่รู้"
+    },
+    {
+      "id": "32569788579975601847195474482692096",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-13 07:42:56 UTC",
+      "timestampUnix": 1765611776,
+      "type": "text",
+      "text": "กรรม"
+    },
+    {
+      "id": "32582038699668382275025158895828992",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-21 00:10:57 UTC",
+      "timestampUnix": 1766275857,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32582123090678252920986673751261184",
+      "sender": "me",
+      "timestamp": "2025-12-21 01:27:11 UTC",
+      "timestampUnix": 1766280431,
+      "type": "text",
+      "text": "แค่พวกเพื่อนเก่ามันไม่เห็นหัว😞"
+    },
+    {
+      "id": "32582135978198085101374501011062784",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-21 01:38:50 UTC",
+      "timestampUnix": 1766281130,
+      "type": "text",
+      "text": "กอดน้า",
+      "reactions": [
+        {
+          "user": "me",
+          "emoji": "❤"
+        }
+      ]
+    },
+    {
+      "id": "32599107333848662355134630265356288",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-31 17:12:29 UTC",
+      "timestampUnix": 1767201149,
+      "type": "media_share",
+      "text": "[Shared post]",
+      "reactions": [
+        {
+          "user": "me",
+          "emoji": "❤"
+        }
+      ]
+    },
+    {
+      "id": "32599109426206395599143518840291328",
+      "sender": "me",
+      "timestamp": "2025-12-31 17:14:23 UTC",
+      "timestampUnix": 1767201263,
+      "type": "clip",
+      "text": "[Clip by @fanchef.diary]",
+      "clipCaption": "🎉#happynewyear",
+      "permalink": "https://www.instagram.com/reel/DS7fOZ6kiiR/",
+      "reactions": [
+        {
+          "user": "gizf_ty",
+          "emoji": "🤍"
+        }
+      ]
+    },
+    {
+      "id": "32599111467141007385843754724229120",
+      "sender": "gizf_ty",
+      "timestamp": "2025-12-31 17:16:13 UTC",
+      "timestampUnix": 1767201373,
+      "type": "action_log",
+      "text": "Reacted 🤍 to your message"
+    },
+    {
+      "id": "32611274950397536570278906058244096",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-08 08:25:57 UTC",
+      "timestampUnix": 1767860757,
+      "type": "reel_share",
+      "text": "ไหนสาวญี่ปุ่น",
+      "reelOwner": "aek_pasu",
+      "permalink": "https://www.instagram.com/reel/DTPILSsgdBn/"
+    },
+    {
+      "id": "32611275246039832937551221607104512",
+      "sender": "me",
+      "timestamp": "2026-01-08 08:26:13 UTC",
+      "timestampUnix": 1767860773,
+      "type": "text",
+      "text": "ไม่เอามีแต่เด็ก"
+    },
+    {
+      "id": "32611275441746856392013893857181696",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-08 08:26:24 UTC",
+      "timestampUnix": 1767860784,
+      "type": "text",
+      "text": "อนุบาล?"
+    },
+    {
+      "id": "32611275612723270850801929442820096",
+      "sender": "me",
+      "timestamp": "2026-01-08 08:26:33 UTC",
+      "timestampUnix": 1767860793,
+      "type": "text",
+      "text": "เจอแต่สาวเกาหลี"
+    },
+    {
+      "id": "32611278533435588499600385568145408",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-08 08:29:11 UTC",
+      "timestampUnix": 1767860951,
+      "type": "text",
+      "text": "โห่"
+    },
+    {
+      "id": "32611278814389701791669618061869056",
+      "sender": "me",
+      "timestamp": "2026-01-08 08:29:26 UTC",
+      "timestampUnix": 1767860966,
+      "type": "text",
+      "text": "สวยๆทั้งนั้น"
+    },
+    {
+      "id": "32611377449662415589680481958887424",
+      "sender": "me",
+      "timestamp": "2026-01-08 09:58:33 UTC",
+      "timestampUnix": 1767866313,
+      "type": "text",
+      "text": "สาวญี่ปุ่นไม่แจ่มเลยอะ"
+    },
+    {
+      "id": "32611378337478603776546892379324416",
+      "sender": "me",
+      "timestamp": "2026-01-08 09:59:22 UTC",
+      "timestampUnix": 1767866362,
+      "type": "text",
+      "text": "มีแต่อวบแล้วแบน"
+    },
+    {
+      "id": "32611385103100612432014256614932480",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-08 10:05:28 UTC",
+      "timestampUnix": 1767866728,
+      "type": "text",
+      "text": "โห้บูบี้"
+    },
+    {
+      "id": "32612577036576264343005382246924288",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-09 04:02:23 UTC",
+      "timestampUnix": 1767931343,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32612577456598518085619479708958720",
+      "sender": "me",
+      "timestamp": "2026-01-09 04:02:46 UTC",
+      "timestampUnix": 1767931366,
+      "type": "text",
+      "text": "ป้ากู"
+    },
+    {
+      "id": "32612577698703032041949374407770112",
+      "sender": "me",
+      "timestamp": "2026-01-09 04:02:59 UTC",
+      "timestampUnix": 1767931379,
+      "type": "text",
+      "text": "ไม่รู้เรื่องระดับลิง"
+    },
+    {
+      "id": "32612637993753898926290439371751424",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-09 04:57:28 UTC",
+      "timestampUnix": 1767934648,
+      "type": "text",
+      "text": "กูไปไม่ต่างไรกับป้ามึงเลย5765"
+    },
+    {
+      "id": "32612638763974676187428777577414656",
+      "sender": "me",
+      "timestamp": "2026-01-09 04:58:09 UTC",
+      "timestampUnix": 1767934689,
+      "type": "text",
+      "text": "อย่างน้อยก็แยกแยะออกว่าอะไรควรเป็นอะไร"
+    },
+    {
+      "id": "32623929256196599550227694336606208",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-16 06:59:08 UTC",
+      "timestampUnix": 1768546748,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32623937044714363392744781000998912",
+      "sender": "me",
+      "timestamp": "2026-01-16 07:06:10 UTC",
+      "timestampUnix": 1768547170,
+      "type": "text",
+      "text": "น่าอยู่กว่ากรุงเทพอีก"
+    },
+    {
+      "id": "32623938027121452246129777135583232",
+      "sender": "me",
+      "timestamp": "2026-01-16 07:07:04 UTC",
+      "timestampUnix": 1768547224,
+      "type": "text",
+      "text": "ถ้าเอามหาลัยผมไปเทียบผมแทบรับไม่ได้"
+    },
+    {
+      "id": "32623950060269319946447716698030080",
+      "sender": "me",
+      "timestamp": "2026-01-16 07:17:56 UTC",
+      "timestampUnix": 1768547876,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-2.fna.fbcdn.net/v/t1.15752-9/615292254_1432220038377852_4231778950916283465_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=111&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=2mjvL9prrdIQ7kNvwGwiN2C&_nc_oc=Adr93Xso27IOmon2GrMrS2lYqfyxwvrbfDOvU74T98NSAELdOX9gJ6uurGqwNMaGcrc&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-2.fna&_nc_ss=7a22e&oh=03_Q7cD6gHbBURX6iq68OxgCua-0kXZ-CkZhL1R1XJRDPMUCjXgGg&oe=6AE46AFE&ig_cache_key=MTQzMjIyMDAzNTA0NDUxOQ%3D%3D.2-ccb7-5-w750h1000.f"
+    },
+    {
+      "id": "32623950177102271599377152015859712",
+      "sender": "me",
+      "timestamp": "2026-01-16 07:18:02 UTC",
+      "timestampUnix": 1768547882,
+      "type": "text",
+      "text": "ดูดิแถว มอ"
+    },
+    {
+      "id": "32623950549579794932691882595057664",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-16 07:18:23 UTC",
+      "timestampUnix": 1768547903,
+      "type": "text",
+      "text": "น่ารัก"
+    },
+    {
+      "id": "32623950902130241427125943750623232",
+      "sender": "me",
+      "timestamp": "2026-01-16 07:18:42 UTC",
+      "timestampUnix": 1768547922,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-3.fna.fbcdn.net/v/t1.15752-9/601452354_1390422162549535_39949712649424229_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=109&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=LjAmO_peoBAQ7kNvwF38fVx&_nc_oc=Adpqqevpd3hynpc771M_Qi7NgS9uIqBmPxWfE58jZjefR8gHnf69myeQh3SalQsajJ8&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-3.fna&_nc_ss=7a22e&oh=03_Q7cD6gHVD0wufQFFmCeWqcQkdTjQUcQdUuiXK7zvUKRmXInenA&oe=6AE46843&ig_cache_key=MTM5MDQyMjE1OTIxNjIwMg%3D%3D.2-ccb7-5-w750h1000.f",
+      "reactions": [
+        {
+          "user": "gizf_ty",
+          "emoji": "🤍"
+        }
+      ]
+    },
+    {
+      "id": "32623951523691548996826356753891328",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-16 07:19:15 UTC",
+      "timestampUnix": 1768547955,
+      "type": "action_log",
+      "text": "Reacted 🤍 to your message"
+    },
+    {
+      "id": "32623951610634263549688298982080512",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-16 07:19:20 UTC",
+      "timestampUnix": 1768547960,
+      "type": "text",
+      "text": "หมา"
+    },
+    {
+      "id": "32623953069453070722984573013065728",
+      "sender": "me",
+      "timestamp": "2026-01-16 07:20:39 UTC",
+      "timestampUnix": 1768548039,
+      "type": "text",
+      "text": "จิ่งจอก"
+    },
+    {
+      "id": "32623974738657169568402979533357056",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-16 07:40:14 UTC",
+      "timestampUnix": 1768549214,
+      "type": "text",
+      "text": "565555"
+    },
+    {
+      "id": "32624553612295451630691528455749632",
+      "sender": "me",
+      "timestamp": "2026-01-16 16:23:15 UTC",
+      "timestampUnix": 1768580595,
+      "type": "placeholder",
+      "text": "Update to the latest version of Instagram to view this message."
+    },
+    {
+      "id": "32624554581245437768120595881394176",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-16 16:24:07 UTC",
+      "timestampUnix": 1768580647,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32624554790389752135404032781975552",
+      "sender": "me",
+      "timestamp": "2026-01-16 16:24:19 UTC",
+      "timestampUnix": 1768580659,
+      "type": "text",
+      "text": "หมา"
+    },
+    {
+      "id": "32635502237922946125059285351137280",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-23 13:15:21 UTC",
+      "timestampUnix": 1769174121,
+      "type": "placeholder",
+      "text": "This content is unavailable."
+    },
+    {
+      "id": "32642672287638285478826184896675840",
+      "sender": "me",
+      "timestamp": "2026-01-28 01:13:30 UTC",
+      "timestampUnix": 1769562810,
+      "type": "link",
+      "text": "https://drive.google.com/file/d/1H9jOuJu1nnYQ5JVoLQV0ae2qtqJ04mtd/view?usp=sharing​",
+      "linkUrl": "https://drive.google.com/file/d/1H9jOuJu1nnYQ5JVoLQV0ae2qtqJ04mtd/view?usp=sharing"
+    },
+    {
+      "id": "32642672405013294706361575388741632",
+      "sender": "me",
+      "timestamp": "2026-01-28 01:13:36 UTC",
+      "timestampUnix": 1769562816,
+      "type": "text",
+      "text": "อะนี้"
+    },
+    {
+      "id": "32642672587534253455543333371772928",
+      "sender": "me",
+      "timestamp": "2026-01-28 01:13:46 UTC",
+      "timestampUnix": 1769562826,
+      "type": "text",
+      "text": "เผื่ออยากใส่ใจ"
+    },
+    {
+      "id": "32642674045555109820443153328504832",
+      "sender": "me",
+      "timestamp": "2026-01-28 01:15:05 UTC",
+      "timestampUnix": 1769562905,
+      "type": "text",
+      "text": "21:40"
+    },
+    {
+      "id": "32642674236516560787991453748953088",
+      "sender": "me",
+      "timestamp": "2026-01-28 01:15:16 UTC",
+      "timestampUnix": 1769562916,
+      "type": "text",
+      "text": "24:13"
+    },
+    {
+      "id": "32642674291208648209346249791373312",
+      "sender": "me",
+      "timestamp": "2026-01-28 01:15:19 UTC",
+      "timestampUnix": 1769562919,
+      "type": "text",
+      "text": "น่าสนใจ"
+    },
+    {
+      "id": "32642750688700999763756082010259456",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-28 02:24:20 UTC",
+      "timestampUnix": 1769567060,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32642778785431750787295480771510272",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-28 02:49:43 UTC",
+      "timestampUnix": 1769568583,
+      "type": "text",
+      "text": "สนุดสัส"
+    },
+    {
+      "id": "32645404994359309515632948333772800",
+      "sender": "me",
+      "timestamp": "2026-01-29 18:22:30 UTC",
+      "timestampUnix": 1769710950,
+      "type": "clip",
+      "text": "[Clip by @sidofit]",
+      "clipCaption": "You've survived 100% of your worst days so far—you are capable of getting through this one too,.\nGrowth: Difficult times refine you, teaching patience and strength, helping you grow into the person yo",
+      "permalink": "https://www.instagram.com/reel/DTk7CjFjnJu/",
+      "reactions": [
+        {
+          "user": "gizf_ty",
+          "emoji": "🤍"
+        }
+      ]
+    },
+    {
+      "id": "32645405350010284753976110924955648",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-29 18:22:50 UTC",
+      "timestampUnix": 1769710970,
+      "type": "action_log",
+      "text": "Reacted 🤍 to your message"
+    },
+    {
+      "id": "32646363135887359155105285808324608",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 08:48:11 UTC",
+      "timestampUnix": 1769762891,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk6-1.fna.fbcdn.net/v/t1.15752-9/620630182_1124164219790258_7520744427883366796_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=101&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=CKJkzRYkH60Q7kNvwHn91VV&_nc_oc=AdpIwOG_uXDMuHeeSPU2x-hZlqXJ7oVNrVbBmBPbFSTJ--sRqTOeX3IrXSwoaB58F6I&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk6-1.fna&_nc_ss=7a22e&oh=03_Q7cD6gGFtcqtzLcL61LrzDHkp5IInqqSt6jfgTHKyjj2TTbfSw&oe=6AE44CA1&ig_cache_key=MTEyNDE2NDIxMzEyMzU5Mg%3D%3D.2-ccb7-5-w1170h2532.f"
+    },
+    {
+      "id": "32646367287573745911705373694230528",
+      "sender": "me",
+      "timestamp": "2026-01-30 08:51:56 UTC",
+      "timestampUnix": 1769763116,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk6-2.fna.fbcdn.net/v/t1.15752-9/616693464_873232548754330_4518751843078412801_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=101&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=yZpjPTRLSOUQ7kNvwEfdDfZ&_nc_oc=AdrwVjC-PHqt_r-pHcn8LfSZ91COUIqWoCm79lyBt9gBIa8hW2JAm2z1pD5QR0i-rjs&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk6-2.fna&_nc_ss=7a22e&oh=03_Q7cD6gHLmeG0wHXEkgUTn-FR1k1mddBJu1s44-UJZ-M-cW5efg&oe=6AE474B0&ig_cache_key=ODczMjMyNTQ1NDIwOTk3.2-ccb7-5-w1220h738.f"
+    },
+    {
+      "id": "32646505637022074475586348835143680",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 10:56:56 UTC",
+      "timestampUnix": 1769770616,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-3.fna.fbcdn.net/v/t1.15752-9/620054509_1207414844853096_4077467221994015438_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=105&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=68228yENlTwQ7kNvwGDO4Fu&_nc_oc=AdqeDrfW7bmX3mOzTyBvbBaTXRKJ4zfGruNAmgZMCQNMU7Aeb5mH1FvRPv77Ex2uk-A&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-3.fna&_nc_ss=7a22e&oh=03_Q7cD6gGi7WqPfamqEjQCC2seUoSNY1Atq9x6USxB0HqdFlZhRQ&oe=6AE45616&ig_cache_key=MTIwNzQxNDg0MTUxOTc2Mw%3D%3D.2-ccb7-5-w1170h2532.f"
+    },
+    {
+      "id": "32646506117774237889065189388582912",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 10:57:22 UTC",
+      "timestampUnix": 1769770642,
+      "type": "text",
+      "text": "พี่จ๋ามันจะเอาแล้ว"
+    },
+    {
+      "id": "32646506203830955324066861852655616",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 10:57:27 UTC",
+      "timestampUnix": 1769770647,
+      "type": "text",
+      "text": "บีบคอมันเบยค่ะ"
+    },
+    {
+      "id": "32646506406659971517483612628844544",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 10:57:38 UTC",
+      "timestampUnix": 1769770658,
+      "type": "animated_media",
+      "text": "[GIF]",
+      "mediaUrl": "https://cdn.fbsbx.com/v/t59.2708-21/467099036_1752005552224977_7489943491073823135_n.gif?_nc_cat=110&ccb=1-7&_nc_sid=81a98a&_nc_ohc=Q-Ca0xeYn9cQ7kNvwF6bbVo&_nc_oc=AdolQJoK2YPXxHIXa21NUcoNjr_h8Ml4v_vgw5QQeGfOGRed3Abp7wsFV6MzzWHR3H8&_nc_ad=z-m&_nc_cid=0&_nc_zt=7&_nc_ht=cdn.fbsbx.com&_nc_gid=jLRPu_ulDBESPuKDOFhC9w&_nc_ss=7a22e&oh=03_Q7cD6gFBdKfSapaN6fal8rGz6yQM8mfGFeOltoJd5g6pr1DVBA&oe=6ABED82F"
+    },
+    {
+      "id": "32646507151226769561593708854378496",
+      "sender": "me",
+      "timestamp": "2026-01-30 10:58:18 UTC",
+      "timestampUnix": 1769770698,
+      "type": "text",
+      "text": "เอาหน่า"
+    },
+    {
+      "id": "32646507446126400012458477855178752",
+      "sender": "me",
+      "timestamp": "2026-01-30 10:58:34 UTC",
+      "timestampUnix": 1769770714,
+      "type": "text",
+      "text": "ก็แค่อีนางใบโพล่า"
+    },
+    {
+      "id": "32646507853488819317982373429116928",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 10:58:56 UTC",
+      "timestampUnix": 1769770736,
+      "type": "text",
+      "text": "มันบ้า กูลงโน๊ตห่างจากนางตั้งนาง"
+    },
+    {
+      "id": "32646508010027741953529038766080000",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 10:59:05 UTC",
+      "timestampUnix": 1769770745,
+      "type": "text",
+      "text": "สไลด์หน้ามารับหรอ"
+    },
+    {
+      "id": "32646511518247736828012316424404992",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:02:15 UTC",
+      "timestampUnix": 1769770935,
+      "type": "text",
+      "text": "ขอเพลงอะไรแสบไว้จิกกัดดิ"
+    },
+    {
+      "id": "32646511741088980030953979914485760",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:02:27 UTC",
+      "timestampUnix": 1769770947,
+      "type": "text",
+      "text": "ใครโน๊ต"
+    },
+    {
+      "id": "32646511780672317058969188834476032",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:02:29 UTC",
+      "timestampUnix": 1769770949,
+      "type": "text",
+      "text": "กูหรอ"
+    },
+    {
+      "id": "32646511852101467419793987830022144",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:02:33 UTC",
+      "timestampUnix": 1769770953,
+      "type": "text",
+      "text": "กูเอง"
+    },
+    {
+      "id": "32646512424900928406211677734830080",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:03:04 UTC",
+      "timestampUnix": 1769770984,
+      "type": "text",
+      "text": "กูมีแต่กวนตีน"
+    },
+    {
+      "id": "32646512637286483281198472530755584",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:03:16 UTC",
+      "timestampUnix": 1769770996,
+      "type": "text",
+      "text": "ลองส่งมาก่อน"
+    },
+    {
+      "id": "32646513069289528364805449576349696",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:03:39 UTC",
+      "timestampUnix": 1769771019,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32646513130868652345847485585948672",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:03:43 UTC",
+      "timestampUnix": 1769771023,
+      "type": "text",
+      "text": "67555556"
+    },
+    {
+      "id": "32646513374118432407993637796839424",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:03:56 UTC",
+      "timestampUnix": 1769771036,
+      "type": "text",
+      "text": "ได้เลยยยยย"
+    },
+    {
+      "id": "32646514029936044698847489113980928",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:04:31 UTC",
+      "timestampUnix": 1769771071,
+      "type": "text",
+      "text": "เรียบร้อย"
+    },
+    {
+      "id": "32646514326280571719517779873759232",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:04:47 UTC",
+      "timestampUnix": 1769771087,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32646514409608572984160040624586752",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:04:52 UTC",
+      "timestampUnix": 1769771092,
+      "type": "text",
+      "text": "Fc"
+    },
+    {
+      "id": "32646517679346514823044063073140736",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:07:49 UTC",
+      "timestampUnix": 1769771269,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-3.fna.fbcdn.net/v/t1.15752-9/620015437_1463921652028560_8694166859886412505_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=109&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=ZaxrC-Ju4ssQ7kNvwEAP6_K&_nc_oc=AdqDThUn7cYfas-daVtazSS8Nw7YP-xwcg4lhrIR7UGmSgs8NJQJWUGBuD0qg5-d08I&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-3.fna&_nc_ss=7a22e&oh=03_Q7cD6gEcB7T_t7-2Z629Pzv2-XkU8vOH3tBMjPwns14zYV15wQ&oe=6AE463EB&ig_cache_key=MTQ2MzkyMTY0NTM2MTg5NA%3D%3D.2-ccb7-5-w1170h2532.f"
+    },
+    {
+      "id": "32646528287156323610128196239884288",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:17:24 UTC",
+      "timestampUnix": 1769771844,
+      "type": "text",
+      "text": "มึงงงงงงง"
+    },
+    {
+      "id": "32646528415782776811470138063716352",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:17:31 UTC",
+      "timestampUnix": 1769771851,
+      "type": "text",
+      "text": "ไอเหี้ยยยย"
+    },
+    {
+      "id": "32646528478307978955820515847045120",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:17:35 UTC",
+      "timestampUnix": 1769771855,
+      "type": "text",
+      "text": "ว่า"
+    },
+    {
+      "id": "32646528484354655642485843480805376",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:17:35 UTC",
+      "timestampUnix": 1769771855,
+      "type": "text",
+      "text": "ดูนี้"
+    },
+    {
+      "id": "32646528537340290109813990031884288",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:17:38 UTC",
+      "timestampUnix": 1769771858,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-3.fna.fbcdn.net/v/t1.15752-9/621685146_896425402785566_5363724370105092757_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=106&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=2_My7BSBT5oQ7kNvwF0Ewgg&_nc_oc=AdpJJFnQWSrg3dF6QgkIyEaDltwAg7sGRvL8iXYivEPrQTzGf1AwjqpARQaeAGGqX54&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-3.fna&_nc_ss=7a22e&oh=03_Q7cD6gH2Mmur6L4E2yXtpfdJ2CD54CQw3_fNhxehh6jlVCkW4w&oe=6AE47172&ig_cache_key=ODk2NDI1Mzk5NDUyMjMz.2-ccb7-5-w1220h2700.f"
+    },
+    {
+      "id": "32646528554897089462431498039721984",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:17:39 UTC",
+      "timestampUnix": 1769771859,
+      "type": "text",
+      "text": "ไหน"
+    },
+    {
+      "id": "32646528765876947098769403873853440",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:17:50 UTC",
+      "timestampUnix": 1769771870,
+      "type": "text",
+      "text": "เห้ยยย"
+    },
+    {
+      "id": "32646528815877695460786534168395776",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:17:53 UTC",
+      "timestampUnix": 1769771873,
+      "type": "text",
+      "text": "ตายแน่มึง"
+    },
+    {
+      "id": "32646528915273604023624983887478784",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:17:58 UTC",
+      "timestampUnix": 1769771878,
+      "type": "text",
+      "text": "5555"
+    },
+    {
+      "id": "32646529018883837290799044059201536",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:18:04 UTC",
+      "timestampUnix": 1769771884,
+      "type": "text",
+      "text": "แม่งแบบบ"
+    },
+    {
+      "id": "32646549954538861818500005666750464",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:36:59 UTC",
+      "timestampUnix": 1769773019,
+      "type": "text",
+      "text": "เอาให้สุด"
+    },
+    {
+      "id": "32646552906298931311247155536068608",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:39:39 UTC",
+      "timestampUnix": 1769773179,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk6-1.fna.fbcdn.net/v/t1.15752-9/620124957_878187471745045_2837880900130378794_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=100&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=Wj9G-q1jFB0Q7kNvwHP2mFQ&_nc_oc=AdpRbDL0hIK5MltLpX2qis-wOW4VrDjdXdyTGJYCuFqWawUufxFXVkkkT1-_3M4Hyno&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk6-1.fna&_nc_ss=7a22e&oh=03_Q7cD6gFi2VWRNuV2EMNSRO6a2v7sWymEUrsniwRO9npxdF4aIw&oe=6AE47597&ig_cache_key=ODc4MTg3NDY4NDExNzEy.2-ccb7-5-w1170h2532.f"
+    },
+    {
+      "id": "32646552949190710335626246247940096",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 11:39:41 UTC",
+      "timestampUnix": 1769773181,
+      "type": "text",
+      "text": "ลูกพี่"
+    },
+    {
+      "id": "32646566116649199440313742604107776",
+      "sender": "me",
+      "timestamp": "2026-01-30 11:51:35 UTC",
+      "timestampUnix": 1769773895,
+      "type": "text",
+      "text": "ทำงานอยู่ไม่ว่างแล้ว"
+    },
+    {
+      "id": "32646726620696614385515774445879296",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 14:16:36 UTC",
+      "timestampUnix": 1769782596,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-3.fna.fbcdn.net/v/t1.15752-9/620176318_2891767104346696_1358779234897854579_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=101&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=o-9Wq_682sMQ7kNvwFyrdRm&_nc_oc=AdoIW4-BNRl1_B5kOQJExrYfqnXkTXtOtMGog-s15CRAkFMqiOlHtgfaUNE3fruaJFU&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-3.fna&_nc_ss=7a22e&oh=03_Q7cD6gFNer1MWRmhInncXrmJdqle8U6k6oK5x2CTGmviZbPy3A&oe=6AE45962&ig_cache_key=Mjg5MTc2NzA5NzY4MDAzMA%3D%3D.2-ccb7-5-w1170h350.f"
+    },
+    {
+      "id": "32646727567091637416811657143779328",
+      "sender": "me",
+      "timestamp": "2026-01-30 14:17:27 UTC",
+      "timestampUnix": 1769782647,
+      "type": "text",
+      "text": "ปล่อยไป"
+    },
+    {
+      "id": "32646727725147398924051311491022848",
+      "sender": "me",
+      "timestamp": "2026-01-30 14:17:36 UTC",
+      "timestampUnix": 1769782656,
+      "type": "text",
+      "text": "กูรู้เหตุการ2คนนั้นแล้ว"
+    },
+    {
+      "id": "32646727768673856625030453035794432",
+      "sender": "me",
+      "timestamp": "2026-01-30 14:17:38 UTC",
+      "timestampUnix": 1769782658,
+      "type": "text",
+      "text": "คร่าวๆ"
+    },
+    {
+      "id": "32646727838286371629476335388196864",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 14:17:42 UTC",
+      "timestampUnix": 1769782662,
+      "type": "text",
+      "text": "กูพนันถูก"
+    },
+    {
+      "id": "32646727963391452067611566065844224",
+      "sender": "me",
+      "timestamp": "2026-01-30 14:17:49 UTC",
+      "timestampUnix": 1769782669,
+      "type": "text",
+      "text": "แม่งเอ้ย"
+    },
+    {
+      "id": "32646728061423057885502531056959488",
+      "sender": "me",
+      "timestamp": "2026-01-30 14:17:54 UTC",
+      "timestampUnix": 1769782674,
+      "type": "text",
+      "text": "แจ็คพอดไม่แตก"
+    },
+    {
+      "id": "32646728165775182305833041975574528",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-30 14:18:00 UTC",
+      "timestampUnix": 1769782680,
+      "type": "text",
+      "text": "565665555"
+    },
+    {
+      "id": "32647463729305673813319573921857536",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 01:22:35 UTC",
+      "timestampUnix": 1769822555,
+      "type": "text",
+      "text": "ตื่นมาช่วยกูหน่อยอัดคลิป"
+    },
+    {
+      "id": "32647502729724500741406313982984192",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 01:57:49 UTC",
+      "timestampUnix": 1769824669,
+      "type": "placeholder",
+      "text": "Update to the latest version of Instagram to view this message."
+    },
+    {
+      "id": "32647697282923500921567579218116608",
+      "sender": "me",
+      "timestamp": "2026-01-31 04:53:36 UTC",
+      "timestampUnix": 1769835216,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk6-2.fna.fbcdn.net/v/t1.15752-9/623871008_1237042795191169_2623398942387309703_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=106&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=kWIgNsTJlsEQ7kNvwHKI3uV&_nc_oc=AdoIYJI32S5tBjPFh9b68JOoRyCQRRFcUbqQEnTp9r3Ci9wFrjiAS7OW7NBNPRpKwp4&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk6-2.fna&_nc_ss=7a22e&oh=03_Q7cD6gF_XF9f78si0x3IC9n00sJPlfpUX9K0sLXSQdW0QqWkxg&oe=6AE47950&ig_cache_key=MTIzNzA0Mjc5MTg1NzgzNg%3D%3D.2-ccb7-5-w625h478.f"
+    },
+    {
+      "id": "32647697482671246771888181330575360",
+      "sender": "me",
+      "timestamp": "2026-01-31 04:53:46 UTC",
+      "timestampUnix": 1769835226,
+      "type": "text",
+      "text": "เพื่อนกูที่ไม่เกี่ยวข้อง"
+    },
+    {
+      "id": "32647697577938257502196369530552320",
+      "sender": "me",
+      "timestamp": "2026-01-31 04:53:52 UTC",
+      "timestampUnix": 1769835232,
+      "type": "text",
+      "text": "555"
+    },
+    {
+      "id": "32647697665985433962983523742646272",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 04:53:56 UTC",
+      "timestampUnix": 1769835236,
+      "type": "text",
+      "text": "ใครโน๊ต"
+    },
+    {
+      "id": "32647697735652293075470554434109440",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 04:54:00 UTC",
+      "timestampUnix": 1769835240,
+      "type": "text",
+      "text": "666555555",
+      "replyTo": {
+        "sender": "me",
+        "text": "เพื่อนกูที่ไม่เกี่ยวข้อง"
+      }
+    },
+    {
+      "id": "32647697810611873550842255965683712",
+      "sender": "me",
+      "timestamp": "2026-01-31 04:54:04 UTC",
+      "timestampUnix": 1769835244,
+      "type": "text",
+      "text": "คนนอก"
+    },
+    {
+      "id": "32647697842170212824007156388855808",
+      "sender": "me",
+      "timestamp": "2026-01-31 04:54:06 UTC",
+      "timestampUnix": 1769835246,
+      "type": "text",
+      "text": "5555"
+    },
+    {
+      "id": "32647697938884499754106374879969280",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 04:54:11 UTC",
+      "timestampUnix": 1769835251,
+      "type": "text",
+      "text": "5665555"
+    },
+    {
+      "id": "32647698189435427333650472782266368",
+      "sender": "me",
+      "timestamp": "2026-01-31 04:54:25 UTC",
+      "timestampUnix": 1769835265,
+      "type": "text",
+      "text": "แล้วแม่งอยู่ติดกัน"
+    },
+    {
+      "id": "32647698552974027423727028839383040",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 04:54:44 UTC",
+      "timestampUnix": 1769835284,
+      "type": "text",
+      "text": "56555555"
+    },
+    {
+      "id": "32647698576885785449969698507587584",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 04:54:46 UTC",
+      "timestampUnix": 1769835286,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32647698623096724029019496260829184",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 04:54:48 UTC",
+      "timestampUnix": 1769835288,
+      "type": "text",
+      "text": "ชอบๆ"
+    },
+    {
+      "id": "32647836461074725311837905663033344",
+      "sender": "me",
+      "timestamp": "2026-01-31 06:59:20 UTC",
+      "timestampUnix": 1769842760,
+      "type": "text",
+      "text": "กิฟฟฟฟฟฟฟฟฟฟฟฟ"
+    },
+    {
+      "id": "32647837346299865379366998753935360",
+      "sender": "me",
+      "timestamp": "2026-01-31 07:00:08 UTC",
+      "timestampUnix": 1769842808,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk6-2.fna.fbcdn.net/v/t1.15752-9/622220099_906603985393978_3284864774300965376_n.png?_nc_cat=109&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=yweMrkpk4R0Q7kNvwFBBUcM&_nc_oc=AdrfoGIfHg0AbawNagfsxrQia5XTi2S1JnoihQog07AMCL0m4gdhEswNQ9JR5HFKPVw&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk6-2.fna&_nc_ss=7a22e&oh=03_Q7cD6gFUyUCcdO2Ls3KI83WOQcK0ER9d6TfJVIX0uHY6hlHkzQ&oe=6AE4550D&ig_cache_key=OTA2NjAzOTgyMDYwNjQ1.2-ccb7-5-w922h905.f"
+    },
+    {
+      "id": "32647837358525869289331699407126528",
+      "sender": "me",
+      "timestamp": "2026-01-31 07:00:09 UTC",
+      "timestampUnix": 1769842809,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-2.fna.fbcdn.net/v/t1.15752-9/619138568_1766902867617058_3958726779945837508_n.png?_nc_cat=108&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=k6rHOTlpqAgQ7kNvwGehgz3&_nc_oc=Adr4L00RH-Me8ZVl-cGlviosA9-jjA0NnuulyLHC1qpgADP6ilM2nFfyoYxxMZsCBbw&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-2.fna&_nc_ss=7a22e&oh=03_Q7cD6gE6aSEKKgl_agtGH2_rMlUIEONMiMluk8zysUpx13o90g&oe=6AE47B0D&ig_cache_key=MTc2NjkwMjg2NDI4MzcyNQ%3D%3D.2-ccb7-5-w932h864.f"
+    },
+    {
+      "id": "32647837386849959370797177855016960",
+      "sender": "me",
+      "timestamp": "2026-01-31 07:00:11 UTC",
+      "timestampUnix": 1769842811,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk6-1.fna.fbcdn.net/v/t1.15752-9/619850796_865217476403380_1765303342078219668_n.png?_nc_cat=105&_nc_map=urlgen_bucketless&ccb=7-5&_nc_sid=61c521&_nc_ohc=hWp57Tz_5F8Q7kNvwFeOV3w&_nc_oc=AdqjQyogDCSgAKgdnSFwlQRORpfg39I4MxdC0ZGOKa1yaYv4AJrQrp5fy41CYGx_T5k&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk6-1.fna&_nc_ss=7a22e&oh=03_Q7cD6gEfxwzLuL3Xevn-i8PrwvTbTApdum3yMezot3ZCd-yImQ&oe=6AE46513&ig_cache_key=ODY1MjE3NDczMDcwMDQ3.2-ccb7-5-w1919h1035.f"
+    },
+    {
+      "id": "32647850488571262359531841881374720",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 07:12:01 UTC",
+      "timestampUnix": 1769843521,
+      "type": "text",
+      "text": "เห้ยย"
+    },
+    {
+      "id": "32647852643498100998786536972484608",
+      "sender": "me",
+      "timestamp": "2026-01-31 07:13:58 UTC",
+      "timestampUnix": 1769843638,
+      "type": "text",
+      "text": "เหมือนจะแค่กูคนเดียว"
+    },
+    {
+      "id": "32647852811555853163488173591887872",
+      "sender": "me",
+      "timestamp": "2026-01-31 07:14:07 UTC",
+      "timestampUnix": 1769843647,
+      "type": "text",
+      "text": "อีเบ็นน่าจะพูดอะไรแน่ๆ"
+    },
+    {
+      "id": "32647852908521292514150947628253184",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 07:14:12 UTC",
+      "timestampUnix": 1769843652,
+      "type": "text",
+      "text": "ตายแน่"
+    },
+    {
+      "id": "32647852978019640619524641565704192",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 07:14:16 UTC",
+      "timestampUnix": 1769843656,
+      "type": "text",
+      "text": "อีเบน"
+    },
+    {
+      "id": "32647853336502928942945168712007680",
+      "sender": "me",
+      "timestamp": "2026-01-31 07:14:35 UTC",
+      "timestampUnix": 1769843675,
+      "type": "text",
+      "text": "ดูโน๊ตกู"
+    },
+    {
+      "id": "32647861727467262785055946480549888",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 07:22:10 UTC",
+      "timestampUnix": 1769844130,
+      "type": "text",
+      "text": "เห็นละ"
+    },
+    {
+      "id": "32648293309779874555837003165859840",
+      "sender": "gizf_ty",
+      "timestamp": "2026-01-31 13:52:06 UTC",
+      "timestampUnix": 1769867526,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://instagram.fbkk7-2.fna.fbcdn.net/v/t1.15752-9/623211772_1599728547835511_248609905603698019_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=111&_nc_map=urlgen_bucketless&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=CnLqjUIR0tsQ7kNvwHvSvmL&_nc_oc=AdoGGD_84zSMnfEJZts4xyFIzNX0Ut-Q_e44ku33FGqj6__AZkHOLApbBZ1kTKJopp8&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=instagram.fbkk7-2.fna&_nc_ss=7a22e&oh=03_Q7cD6gFo-PZkqnOoHIgrwRaiPkoWvAYAfVr8ppFWbHL5Y5fV4A&oe=6AE464F9&ig_cache_key=MTU5OTcyODU0MTE2ODg0NQ%3D%3D.2-ccb7-5-w1170h2532.f"
+    },
+    {
+      "id": "32651354796510555662254856147566592",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 11:58:10 UTC",
+      "timestampUnix": 1770033490,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32651355143162046996565855758712832",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 11:58:29 UTC",
+      "timestampUnix": 1770033509,
+      "type": "text",
+      "text": "เกษตรแฟร์มีถึงวันเสาร์"
+    },
+    {
+      "id": "32651355735494580815193852774187008",
+      "sender": "me",
+      "timestamp": "2026-02-02 11:59:01 UTC",
+      "timestampUnix": 1770033541,
+      "type": "text",
+      "text": "รู้"
+    },
+    {
+      "id": "32651355926162544084529434228424704",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 11:59:11 UTC",
+      "timestampUnix": 1770033551,
+      "type": "text",
+      "text": "และไปวันอาทิตย์ทำไมม"
+    },
+    {
+      "id": "32651355949793247518065065168207872",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 11:59:12 UTC",
+      "timestampUnix": 1770033552,
+      "type": "text",
+      "text": "วาย"
+    },
+    {
+      "id": "32651356023727410383867400144551936",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 11:59:16 UTC",
+      "timestampUnix": 1770033556,
+      "type": "animated_media",
+      "text": "[GIF]",
+      "mediaUrl": "https://cdn.fbsbx.com/v/t59.2708-21/467104604_1840355359826568_325524321216417993_n.gif?_nc_cat=1&ccb=1-7&_nc_sid=81a98a&_nc_ohc=vPHfxz-kXCYQ7kNvwGagQcX&_nc_oc=AdrVtpKF5ZSoxcn8mo0ba51_-RcPyyqJHBfywgZks7KXan4B_7ZFneyUgDD3erJa7HQ&_nc_ad=z-m&_nc_cid=0&_nc_zt=7&_nc_ht=cdn.fbsbx.com&_nc_gid=CG6yVd3WoiI5Gs9xVlU4nQ&_nc_ss=7a22e&oh=03_Q7cD6gFn5ObrZMALt-UxGv4SVZlrbdE3vSjonQtAenG6qB3O2g&oe=6ABEC901"
+    },
+    {
+      "id": "32651356590932139913425646430191616",
+      "sender": "me",
+      "timestamp": "2026-02-02 11:59:47 UTC",
+      "timestampUnix": 1770033587,
+      "type": "text",
+      "text": "กูตกลงกับไซแล้วเมื่อวานว่าจะไปวันศุกร์"
+    },
+    {
+      "id": "32651357019095310750649243211399168",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 12:00:10 UTC",
+      "timestampUnix": 1770033610,
+      "type": "text",
+      "text": "เออดีไปกับแฟนอะ"
+    },
+    {
+      "id": "32651357076819858430281152443973632",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 12:00:13 UTC",
+      "timestampUnix": 1770033613,
+      "type": "text",
+      "text": "🫩"
+    },
+    {
+      "id": "32651357152102552074847950481653760",
+      "sender": "me",
+      "timestamp": "2026-02-02 12:00:17 UTC",
+      "timestampUnix": 1770033617,
+      "type": "text",
+      "text": "มันไม่ได้บอกมึงหรอ"
+    },
+    {
+      "id": "32651357246709593642431032053465088",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-02 12:00:23 UTC",
+      "timestampUnix": 1770033623,
+      "type": "text",
+      "text": "หึๆๆ"
+    },
+    {
+      "id": "32655506329060155104063798774857728",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-05 02:29:05 UTC",
+      "timestampUnix": 1770258545,
+      "type": "text",
+      "text": "ออกดิสไม"
+    },
+    {
+      "id": "32655506398313954723252325186535424",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-05 02:29:09 UTC",
+      "timestampUnix": 1770258549,
+      "type": "animated_media",
+      "text": "[GIF]",
+      "mediaUrl": "https://cdn.fbsbx.com/v/t59.2708-21/467099036_1752005552224977_7489943491073823135_n.gif?_nc_cat=110&ccb=1-7&_nc_sid=81a98a&_nc_ohc=Q-Ca0xeYn9cQ7kNvwF6bbVo&_nc_oc=AdolQJoK2YPXxHIXa21NUcoNjr_h8Ml4v_vgw5QQeGfOGRed3Abp7wsFV6MzzWHR3H8&_nc_ad=z-m&_nc_cid=0&_nc_zt=7&_nc_ht=cdn.fbsbx.com&_nc_gid=CG6yVd3WoiI5Gs9xVlU4nQ&_nc_ss=7a22e&oh=03_Q7cD6gFZR1zh2NfV4fh8ipAWgnNhuNTGFRiSzyaKD1h5m4BeHg&oe=6ABED82F"
+    },
+    {
+      "id": "32669992516478609096772160191463424",
+      "sender": "me",
+      "timestamp": "2026-02-14 04:37:23 UTC",
+      "timestampUnix": 1771043843,
+      "type": "clip",
+      "text": "[Clip by @thechinesementor]",
+      "clipCaption": "ใช้ตลอด ทุกคนต้องเคยได้ยิน\n\n————————————\n🇨🇳คอร์สออนไลน์พูดจีนได้ใน60วัน🇨🇳\nถ้าอยากพูดจีนได้ไวครูบีแนะนำเลยค่ะ\nคอร์สนี้ฝึกตามครูบีพูดได้ทุกคนเริ่มจาก0\n⬇️⬇️⬇️\nกดลิ้งค์บนโปลไฟล์ช่องเลยค่ะ\nFacebook：เหล",
+      "permalink": "https://www.instagram.com/reel/DRf56Qyjza_/"
+    },
+    {
+      "id": "32670208987096540032401352232534016",
+      "sender": "gizf_ty",
+      "timestamp": "2026-02-14 07:52:57 UTC",
+      "timestampUnix": 1771055577,
+      "type": "clip",
+      "text": "[Clip by @tiny_cat_22]",
+      "clipCaption": "선물",
+      "permalink": "https://www.instagram.com/reel/DRtNyGsErGW/",
+      "reactions": [
+        {
+          "user": "me",
+          "emoji": "❤"
+        }
+      ]
+    }
+  ]
+};
+            extractionStats = {"duration":"25s","messageCount":137,"dateRange":{"oldest":"2025-12-13 07:39:23 UTC","newest":"2026-02-14 07:52:57 UTC"},"avgPerDay":2.2,"perSender":{"gizf_ty":73,"me":64},"typeBreakdown":{"media":15,"text":97,"placeholder":12,"media_share":1,"clip":4,"action_log":3,"reel_share":1,"link":1,"animated_media":3},"initiations":{"gizf_ty":12,"me":4},"responseTime":{"me":"27m 55s","gizf_ty":"18m 45s"}};
+        } catch (e) {
+            // Running as an extension page — data arrives via chrome.storage below.
+        }
+        // ============================================
+
+        function startApp() {
+            const messagesContainer = document.getElementById('messagesContainer');
+            const scrollBottomBtn = document.getElementById('scrollBottomBtn');
+            const statusTime = document.getElementById('statusTime');
+            const chatHeader = document.getElementById('chatHeader');
+            const searchBtn = document.getElementById('searchBtn');
+            const cancelSearchBtn = document.getElementById('cancelSearchBtn');
+            const searchBar = document.getElementById('searchBar');
+            const searchInput = document.getElementById('searchInput');
+            const searchCount = document.getElementById('searchCount');
+            const searchUpBtn = document.getElementById('searchUpBtn');
+            const searchDownBtn = document.getElementById('searchDownBtn');
+            const reactionPopupOverlay = document.getElementById('reactionPopupOverlay');
+            const reactorList = document.getElementById('reactorList');
+            const closeReactionPopupBtn = document.getElementById('closeReactionPopup');
+            const lightboxOverlay = document.getElementById('lightboxOverlay');
+            const lightboxImage = document.getElementById('lightboxImage');
+            const lightboxClose = document.getElementById('lightboxClose');
+            const messageInput = document.getElementById('messageInput');
+
+            // IST Timezone (UTC+5:30)
+            // Render times in the viewer's local timezone. (Earlier this was hardcoded
+            // to IST, so exports read the wrong time and grouped onto the wrong day for
+            // everyone outside India.)
+            function toLocal(ts) {
+                return new Date(ts * 1000);
+            }
+
+            function formatISTTime(ts) {
+                const d = toLocal(ts);
+                let h = d.getHours();
+                const m = d.getMinutes().toString().padStart(2, '0');
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                h = h % 12 || 12;
+                return h + ':' + m + ' ' + ampm;
+            }
+
+            function formatISTDateTime(ts) {
+                const d = toLocal(ts);
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ' at ' + formatISTTime(ts);
+            }
+
+            function getDateKey(ts) {
+                const d = toLocal(ts);
+                const year = d.getFullYear();
+                const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                const day = d.getDate().toString().padStart(2, '0');
+                return year + '-' + month + '-' + day;
+            }
+
+            function formatDateLabel(dk) {
+                const parts = dk.split('-');
+                const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                const now = new Date();
+                const today = now.getFullYear() + '-' + (now.getMonth() + 1).toString().padStart(2, '0') + '-' + now.getDate().toString().padStart(2, '0');
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yestKey = yesterday.getFullYear() + '-' + (yesterday.getMonth() + 1).toString().padStart(2, '0') + '-' + yesterday.getDate().toString().padStart(2, '0');
+                
+                if (dk === today) return 'Today';
+                if (dk === yestKey) return 'Yesterday';
+                
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const diff = Math.floor((now - d) / 86400000);
+                if (diff < 7 && diff > 1) return days[d.getDay()];
+                return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+            }
+
+            function getDisplayName(u) {
+                if (u === 'me') return 'You';
+                return (u || '').replace(/^_|_$/g, '');
+            }
+
+            function escapeHtmlText(str) {
+                if (!str) return '';
+                return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            }
+
+            function highlightText(text, query) {
+                if (!query || !text) return text;
+                // text is already HTML-escaped, so escape the query the same way
+                // before matching — otherwise "it's" never matches "it&#39;s".
+                const q = escapeHtmlText(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp('(' + q + ')', 'gi');
+                return text.replace(regex, '<span class="search-highlight-text">$1</span>');
+            }
+
+            function buildReplyPreview(replyTo, sender) {
+                if (!replyTo) return null;
+                const label = replyTo.sender === 'me' ? 'You' : getDisplayName(replyTo.sender);
+                let icon = '💬';
+                if (replyTo.text === '[Photo]' || replyTo.text === '[Media]') icon = '📷';
+                else if (replyTo.text === '[Reel share]') icon = '🎬';
+                
+                let txt = replyTo.text;
+                if (txt === '[Photo]' || txt === '[Media]') txt = 'Photo';
+                if (txt === '[Reel share]') txt = 'Reel';
+                if (txt.length > 50) txt = txt.substring(0, 50) + '...';
+                
+                const w = document.createElement('div');
+                w.className = 'reply-preview ' + (sender === 'me' ? 'sent-reply' : 'received-reply');
+                w.title = 'Reply to ' + label + ': ' + replyTo.text;
+                w.innerHTML = '<div class="reply-bar"></div><div class="reply-content"><span class="reply-sender"><span class="reply-icon">' + icon + '</span> ' + escapeHtmlText(label) + '</span><span class="reply-text">' + escapeHtmlText(txt) + '</span></div>';
+                return w;
+            }
+
+            // Force color emoji presentation — IG sends bare U+2764 etc.,
+            // which otherwise renders as a black text glyph.
+            function emojiFix(s) {
+                return (s || '').replace(/([☀-➿])(?!️)/g, '$1️');
+            }
+
+            function buildReactionBadge(reactions) {
+                if (!reactions || !reactions.length) return null;
+                const uniq = [];
+                for (let i = 0; i < reactions.length; i++) {
+                    if (!uniq.includes(reactions[i].emoji)) uniq.push(reactions[i].emoji);
+                }
+                const b = document.createElement('div');
+                b.className = 'reaction-badge';
+                b.innerHTML = '<span>' + escapeHtmlText(emojiFix(uniq.join(''))) + '</span>' + (reactions.length > 1 ? '<span class="count-display">' + reactions.length + '</span>' : '');
+                b.title = 'Click to see who reacted';
+                b.addEventListener('click', function(e) { e.stopPropagation(); showReactionPopup(reactions); });
+                return b;
+            }
+
+            function buildMessageElement(msg, query) {
+                if (msg._type === 'date_separator') {
+                    const s = document.createElement('div');
+                    s.className = 'date-separator';
+                    s.innerHTML = '<span>' + formatDateLabel(msg._dateKey) + '</span>';
+                    s.setAttribute('data-date-key', msg._dateKey);
+                    s.setAttribute('data-msg-index', msg._globalIndex);
+                    return s;
+                }
+
+                const isMe = msg.sender === 'me';
+                const isAction = msg._isActionLog;
+                const row = document.createElement('div');
+                row.className = 'message-row ' + (isAction ? 'action-log' : (isMe ? 'sent' : 'received'));
+                row.setAttribute('data-msg-index', msg._globalIndex);
+                row.setAttribute('data-date-time', formatISTDateTime(msg.timestampUnix));
+                if (msg._searchMatch) row.setAttribute('data-search-match', 'true');
+
+                if (msg._showSender) {
+                    const sn = document.createElement('div');
+                    sn.className = 'sender-name';
+                    sn.textContent = getDisplayName(msg.sender);
+                    row.appendChild(sn);
+                }
+
+                if (msg.replyTo) {
+                    const rp = buildReplyPreview(msg.replyTo, msg.sender);
+                    if (rp) row.appendChild(rp);
+                }
+
+                let cw = document.createElement('div');
+                cw.style.position = 'relative';
+
+                if (isAction) {
+                    const b = document.createElement('div');
+                    b.className = 'message-bubble';
+                    b.textContent = msg.text;
+                    cw.appendChild(b);
+                } else if ((msg.type === 'media' || msg.type === 'animated_media') && msg.mediaUrl) {
+                    const mb = document.createElement('div');
+                    mb.className = 'media-bubble';
+                    const isVideo = msg.text === '[Video]' || /\.mp4(\?|$)/i.test(msg.mediaUrl);
+                    if (isVideo) {
+                        // Render videos as a playable element — assigning an mp4 to <img>
+                        // fails and mislabels the attachment as a photo.
+                        const v = document.createElement('video');
+                        v.src = msg.mediaUrl;
+                        v.controls = true;
+                        v.preload = 'metadata';
+                        v.style.cssText = 'width:100%;max-height:350px;border-radius:15px;display:block;background:#000;';
+                        v.onerror = function() {
+                            mb.innerHTML = '<div style="width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:#2a2a2a;border-radius:15px;color:#888;">🎬 Video</div>';
+                        };
+                        mb.appendChild(v);
+                    } else {
+                        const img = document.createElement('img');
+                        img.src = msg.mediaUrl;
+                        img.alt = 'Photo';
+                        img.loading = 'lazy';
+                        img.addEventListener('click', function(e) { e.stopPropagation(); openLightbox(msg.mediaUrl); });
+                        img.onerror = function() {
+                            img.style.display = 'none';
+                            mb.innerHTML = '<div style="width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:#2a2a2a;border-radius:15px;color:#888;">📷 Photo</div>';
+                        };
+                        mb.appendChild(img);
+                    }
+                    cw = mb;
+                    cw.style.position = 'relative';
+                } else if (msg.type === 'reel_share' || msg.type === 'clip') {
+                    const owner = msg.reelOwner || ((msg.text || '').match(/@([\w.]+)/) || [])[1] || '';
+                    const rb = document.createElement('div');
+                    rb.className = 'reel-share-bubble';
+                    rb.innerHTML = '<div class="reel-icon"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19" fill="#fff"/></svg></div><div><span class="reel-label">Reel</span><br><span class="reel-owner">' + escapeHtmlText(owner ? '@' + owner : 'Reel') + '</span></div>';
+                    cw.appendChild(rb);
+                    // reel_share text is the sender's comment on the reel — keep it
+                    if (msg.text && msg.text[0] !== '[') {
+                        const b = document.createElement('div');
+                        b.className = 'message-bubble';
+                        b.style.marginTop = '2px';
+                        b.innerHTML = query ? highlightText(escapeHtmlText(msg.text), query) : escapeHtmlText(msg.text);
+                        cw.appendChild(b);
+                    }
+                } else {
+                    const b = document.createElement('div');
+                    b.className = 'message-bubble';
+                    if (/^\[.*\]$/.test(msg.text || '')) b.classList.add('meta');
+                    b.innerHTML = query ? highlightText(escapeHtmlText(msg.text), query) : escapeHtmlText(msg.text);
+                    cw.appendChild(b);
+                }
+
+                if (msg.reactions && msg.reactions.length) {
+                    const badge = buildReactionBadge(msg.reactions);
+                    if (badge) { cw.appendChild(badge); row.classList.add('has-reaction'); }
+                }
+
+                row.appendChild(cw);
+
+                // Permanent link to a shared reel/post/clip. Only render our own
+                // validated https instagram.com permalinks, never arbitrary text.
+                if (msg.permalink && /^https:\/\/www\.instagram\.com\//.test(msg.permalink)) {
+                    const a = document.createElement('a');
+                    a.className = 'permalink-chip';
+                    a.href = msg.permalink;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.textContent = '🔗 Open on Instagram';
+                    row.appendChild(a);
+                }
+
+                if (msg._showTimestamp) {
+                    const ts = document.createElement('div');
+                    ts.className = 'message-timestamp';
+                    ts.textContent = formatISTTime(msg.timestampUnix);
+                    ts.title = formatISTDateTime(msg.timestampUnix);
+                    row.appendChild(ts);
+                }
+
+                return row;
+            }
+
+            function processMessages(msgs) {
+                // Group chat if more than one distinct non-me sender — used to label
+                // incoming bubbles so attribution is not lost (esp. in the PDF).
+                const senders = {};
+                for (let i = 0; i < msgs.length; i++) {
+                    if (msgs[i].sender !== 'me' && msgs[i].type !== 'action_log') senders[msgs[i].sender] = 1;
+                }
+                const isGroup = Object.keys(senders).length > 1;
+                const groups = {};
+                for (let i = 0; i < msgs.length; i++) {
+                    const m = msgs[i];
+                    const dk = getDateKey(m.timestampUnix);
+                    if (!groups[dk]) groups[dk] = [];
+                    groups[dk].push(Object.assign({}, m, { _origIdx: i }));
+                }
+                const result = [];
+                let gi = 0;
+                const sortedDates = Object.keys(groups).sort();
+                for (let d = 0; d < sortedDates.length; d++) {
+                    const dk = sortedDates[d];
+                    result.push({ _type: 'date_separator', _dateKey: dk, _globalIndex: gi++ });
+                    const day = groups[dk];
+                    let cur = null;
+                    const grouped = [];
+                    for (let i = 0; i < day.length; i++) {
+                        const m = day[i];
+                        const prev = i > 0 ? day[i - 1] : null;
+                        const same = prev && prev.sender === m.sender && (m.timestampUnix - prev.timestampUnix) <= 120 && prev.type !== 'action_log';
+                        if (m.type === 'action_log') {
+                            if (cur) { grouped.push(cur); cur = null; }
+                            grouped.push([Object.assign({}, m, { _isActionLog: true })]);
+                        } else if (same && cur && cur[0].sender === m.sender) {
+                            cur.push(m);
+                        } else {
+                            if (cur) grouped.push(cur);
+                            cur = [m];
+                        }
+                    }
+                    if (cur) grouped.push(cur);
+                    for (let g = 0; g < grouped.length; g++) {
+                        const group = grouped[g];
+                        for (let j = 0; j < group.length; j++) {
+                            result.push(Object.assign({}, group[j], {
+                                _globalIndex: gi++,
+                                _showTimestamp: j === group.length - 1,
+                                _showSender: j === 0 && isGroup && group[j].sender !== 'me' && !group[j]._isActionLog,
+                                _isActionLog: group[j]._isActionLog || false
+                            }));
+                        }
+                    }
+                }
+                return result;
+            }
+
+            function renderAllMessages() {
+                messagesContainer.innerHTML = '';
+                if (!chatData || !chatData.messages || !chatData.messages.length) {
+                    messagesContainer.innerHTML = '<div style="text-align:center;color:#8e8e93;padding:40px;">No messages</div>';
+                    return [];
+                }
+                const processed = processMessages(chatData.messages);
+                const frag = document.createDocumentFragment();
+                for (let i = 0; i < processed.length; i++) {
+                    frag.appendChild(buildMessageElement(processed[i], ''));
+                }
+                messagesContainer.appendChild(frag);
+                setTimeout(function() {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, 0);
+                return processed;
+            }
+
+            let allProcessedMessages = [];
+            allProcessedMessages = renderAllMessages() || [];
+
+            // Search
+            let searchMode = false, searchResults = [], searchIdx = -1;
+
+            function enterSearch() {
+                if (searchMode) return;
+                searchMode = true;
+                chatHeader.classList.add('search-mode');
+                searchInput.value = '';
+                searchResults = [];
+                searchIdx = -1;
+                updateSearchUI();
+                setTimeout(function() { searchInput.focus(); }, 100);
+            }
+
+            function exitSearch() {
+                searchMode = false;
+                chatHeader.classList.remove('search-mode');
+                searchInput.value = '';
+                searchResults = [];
+                searchIdx = -1;
+                allProcessedMessages = renderAllMessages() || [];
+            }
+
+            function doSearch(query) {
+                if (!query || query.length < 1) {
+                    searchResults = [];
+                    searchIdx = -1;
+                    updateSearchUI();
+                    allProcessedMessages = renderAllMessages() || [];
+                    return;
+                }
+                searchResults = [];
+                const lq = query.toLowerCase();
+                for (let i = 0; i < allProcessedMessages.length; i++) {
+                    const m = allProcessedMessages[i];
+                    if (m._type === 'date_separator') {
+                        if (formatDateLabel(m._dateKey).toLowerCase().indexOf(lq) !== -1) searchResults.push(i);
+                    } else {
+                        if (m.text && m.text.toLowerCase().indexOf(lq) !== -1) searchResults.push(i);
+                        const ts = formatISTDateTime(m.timestampUnix).toLowerCase();
+                        if (ts.indexOf(lq) !== -1 && searchResults.indexOf(i) === -1) searchResults.push(i);
+                    }
+                }
+                searchIdx = searchResults.length > 0 ? 0 : -1;
+                updateSearchUI();
+                messagesContainer.innerHTML = '';
+                const frag = document.createDocumentFragment();
+                for (let i = 0; i < allProcessedMessages.length; i++) {
+                    const m = allProcessedMessages[i];
+                    const el = buildMessageElement(m, query);
+                    if (searchResults.indexOf(m._globalIndex) !== -1) el.setAttribute('data-search-match', 'true');
+                    frag.appendChild(el);
+                }
+                messagesContainer.appendChild(frag);
+                if (searchResults.length > 0) navigateToResult(0);
+            }
+
+            function updateSearchUI() {
+                if (searchResults.length > 0) {
+                    searchCount.textContent = (searchIdx + 1) + '/' + searchResults.length;
+                } else {
+                    searchCount.textContent = (searchMode && searchInput.value) ? '0/0' : '';
+                }
+                searchUpBtn.disabled = searchResults.length <= 1;
+                searchDownBtn.disabled = searchResults.length <= 1;
+            }
+
+            function navigateToResult(target) {
+                if (!searchResults.length) return;
+                if (target === 'next') searchIdx = (searchIdx + 1) % searchResults.length;
+                else if (target === 'prev') searchIdx = (searchIdx - 1 + searchResults.length) % searchResults.length;
+                else searchIdx = target;
+                updateSearchUI();
+                const idx = searchResults[searchIdx];
+                const el = messagesContainer.querySelector('[data-msg-index="' + idx + '"]');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('search-highlight');
+                    setTimeout(function() { el.classList.remove('search-highlight'); }, 2000);
+                }
+            }
+
+            // Lightbox
+            function openLightbox(url) {
+                lightboxImage.src = url;
+                lightboxOverlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+            function closeLightbox() {
+                lightboxOverlay.classList.remove('active');
+                lightboxImage.src = '';
+                document.body.style.overflow = '';
+            }
+
+            // Reaction popup
+            function showReactionPopup(reactions) {
+                reactorList.innerHTML = '';
+                if (!reactions || !reactions.length) return;
+                const grouped = {};
+                for (let i = 0; i < reactions.length; i++) {
+                    const r = reactions[i];
+                    const k = r.user + '_' + r.emoji;
+                    if (!grouped[k]) grouped[k] = { user: r.user, emoji: r.emoji, count: 0 };
+                    grouped[k].count++;
+                }
+                const reactionCount = Object.keys(grouped).length;
+                document.getElementById('reactionPopupTitle').textContent = 'Reactions (' + reactionCount + ')';
+                const groupedValues = Object.values(grouped);
+                for (let i = 0; i < groupedValues.length; i++) {
+                    const r = groupedValues[i];
+                    const item = document.createElement('div');
+                    item.className = 'reactor-item';
+                    item.innerHTML = '<span class="reactor-emoji">' + escapeHtmlText(emojiFix(r.emoji)) + '</span><span class="reactor-name">' + escapeHtmlText(getDisplayName(r.user)) + (r.count > 1 ? ' (×' + r.count + ')' : '') + '</span>';
+                    reactorList.appendChild(item);
+                }
+                reactionPopupOverlay.classList.add('active');
+            }
+            function hideReactionPopup() {
+                reactionPopupOverlay.classList.remove('active');
+            }
+
+            // Event listeners
+            document.getElementById('printBtn').addEventListener('click', function() { window.print(); });
+            searchBtn.addEventListener('click', enterSearch);
+            cancelSearchBtn.addEventListener('click', exitSearch);
+            searchInput.addEventListener('input', function(e) { doSearch(e.target.value); });
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); navigateToResult(e.shiftKey ? 'prev' : 'next'); }
+                if (e.key === 'Escape') exitSearch();
+            });
+            searchUpBtn.addEventListener('click', function() { navigateToResult('prev'); });
+            searchDownBtn.addEventListener('click', function() { navigateToResult('next'); });
+
+            lightboxClose.addEventListener('click', function(e) { e.stopPropagation(); closeLightbox(); });
+            lightboxOverlay.addEventListener('click', function(e) { if (e.target === lightboxOverlay) closeLightbox(); });
+
+            closeReactionPopupBtn.addEventListener('click', hideReactionPopup);
+            reactionPopupOverlay.addEventListener('click', function(e) { if (e.target === reactionPopupOverlay) hideReactionPopup(); });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (lightboxOverlay.classList.contains('active')) closeLightbox();
+                    else if (reactionPopupOverlay.classList.contains('active')) hideReactionPopup();
+                    else if (searchMode) exitSearch();
+                }
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); enterSearch(); }
+            });
+
+            messagesContainer.addEventListener('scroll', function() {
+                const thresh = 300;
+                const near = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < thresh;
+                if (!near) {
+                    scrollBottomBtn.classList.add('visible');
+                } else {
+                    scrollBottomBtn.classList.remove('visible');
+                }
+            });
+
+            scrollBottomBtn.addEventListener('click', function() {
+                messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+            });
+
+            messageInput.addEventListener('focus', function() { messageInput.parentElement.style.borderColor = 'rgba(255,255,255,0.35)'; });
+            messageInput.addEventListener('blur', function() { messageInput.parentElement.style.borderColor = 'rgba(255,255,255,0.12)'; });
+
+            console.log('✅ Instagram DM Chat Export Loaded');
+            console.log('📊 Messages: ' + (chatData.messages ? chatData.messages.length : 0));
+            console.log('⏰ Times shown in your local timezone');
+            console.log('🔍 Ctrl+F or click search icon to search');
+            console.log('🖼️ Click images for lightbox');
+            console.log('💡 Click reactions to see who reacted');
+        }
+
+        // Wait for images to finish (or 4s), then print. Force eager loading first
+        // so lazy off-screen photos are not blank in the PDF.
+        function printWhenReady() {
+            var imgs = Array.prototype.slice.call(document.images);
+            imgs.forEach(function(i) { i.loading = 'eager'; if (!i.complete && i.getAttribute('src')) i.src = i.src; });
+            var pending = imgs.filter(function(i) { return !i.complete; });
+            var done = false;
+            var go = function() { if (!done) { done = true; window.print(); } };
+            if (!pending.length) { setTimeout(go, 300); return; }
+            var left = pending.length;
+            var tick = function() { if (--left <= 0) go(); };
+            pending.forEach(function(i) { i.addEventListener('load', tick); i.addEventListener('error', tick); });
+            setTimeout(go, 4000);
+        }
+
+        // Fill the header from JS (extension-page mode has no placeholder substitution).
+        function fillHeader(chat, exportedAt) {
+            var messages = chat.messages || [];
+            var name = chat.chatWith || 'Chat';
+            document.title = 'Instagram DM - ' + name;
+            document.getElementById('headerName').textContent = name;
+            document.getElementById('headerAvatar').textContent =
+                name.split(' ').map(function(w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase();
+            document.getElementById('infoBarText').textContent = messages.length + ' messages · Exported with';
+            var last = messages[messages.length - 1];
+            var status = 'No messages';
+            if (last && last.timestampUnix) {
+                var days = Math.floor((Date.now() - last.timestampUnix * 1000) / 86400000);
+                status = days <= 0 ? 'Active now' : days === 1 ? 'Active yesterday'
+                    : days < 7 ? 'Active ' + days + 'd ago' : 'Active ' + Math.floor(days / 7) + 'w ago';
+            } else if (last) { status = 'Active recently'; }
+            document.getElementById('headerStatus').textContent = status;
+            var d = new Date(exportedAt || Date.now());
+            var h = d.getHours(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+            document.getElementById('statusTime').textContent = h + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + ap;
+            var mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            document.getElementById('statusDate').textContent = mo[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        }
+
+        if (chatData) {
+            // Saved-file mode: data + header baked in via placeholders.
+            startApp();
+            if (location.hash.indexOf('print') !== -1) printWhenReady();
+        } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            // Extension-page mode: popup stashed the chat, opened this page with #print.
+            chrome.storage.local.get('igdmPendingPdf', function(r) {
+                var d = r && r.igdmPendingPdf;
+                if (!d || !d.chat) {
+                    document.body.textContent = 'No chat data found. Export a conversation from the extension popup first.';
+                    return;
+                }
+                chatData = d.chat;
+                extractionStats = d.stats || {};
+                fillHeader(d.chat, d.exportedAt);
+                startApp();
+                chrome.storage.local.remove('igdmPendingPdf');
+                if (location.hash.indexOf('print') !== -1) printWhenReady();
+            });
+        } else {
+            document.body.textContent = 'No chat data in this file. Export it again from the extension popup.';
+        }
+
+</script>
+</body>
+</html>

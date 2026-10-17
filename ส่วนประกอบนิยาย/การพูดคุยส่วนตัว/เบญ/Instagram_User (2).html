@@ -1,0 +1,4166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Instagram DM Chat Export">
+    <!-- Defense in depth: the export must never make network requests beyond images. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://*.cdninstagram.com https://*.fbcdn.net https://*.giphy.com https://media.giphy.com data:; form-action 'none'; base-uri 'none';">
+    <meta name="theme-color" content="#000000">
+    <title>Instagram DM - Chat</title>
+    
+    <style>
+        :root {
+            --bg-primary: #000000;
+            --bg-bubble-received: #262626;
+            --bg-bubble-sent: #3797F0;
+            --bg-input: #1c1c1e;
+            --bg-reply-preview: rgba(255, 255, 255, 0.05);
+            --bg-reply-hover: rgba(255, 255, 255, 0.1);
+            --bg-popup: #1c1c1e;
+            --bg-lightbox: rgba(0, 0, 0, 0.95);
+            --bg-search-highlight: rgba(255, 200, 0, 0.3);
+            --text-primary: #ffffff;
+            --text-secondary: #8e8e93;
+            --text-tertiary: #6b6b70;
+            --text-reply-sender: #f0f0f0;
+            --text-reply-preview: #c0c0c0;
+            --accent-blue: #3797F0;
+            --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            --bubble-radius: 20px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: var(--font-family);
+            -webkit-font-smoothing: antialiased;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .phone-frame {
+            width: 100%;
+            max-width: 430px;
+            height: 100vh;
+            max-height: 932px;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            border-radius: 0;
+        }
+
+        @media (min-width: 431px) {
+            .phone-frame {
+                border-radius: 28px;
+                height: 92vh;
+                max-height: 880px;
+                margin: 20px;
+            }
+        }
+
+        @media (max-width: 430px) {
+            .phone-frame {
+                max-width: 100%;
+                height: 100vh;
+                max-height: 100vh;
+                border-radius: 0;
+                margin: 0;
+            }
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 22px 8px 22px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 600;
+            flex-shrink: 0;
+            z-index: 15;
+        }
+        .status-bar .time {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .status-bar .status-date {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .chat-header {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px 10px 8px;
+            background: var(--bg-primary);
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+            gap: 6px;
+            position: relative;
+            z-index: 10;
+            transition: all 0.3s;
+        }
+        .chat-header.search-mode {
+            padding: 6px 8px;
+            gap: 4px;
+        }
+        .back-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .back-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 2.2;
+        }
+        .header-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            transition: all 0.3s;
+        }
+        .chat-header.search-mode .header-avatar {
+            width: 0;
+            height: 0;
+            opacity: 0;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .header-info {
+            flex: 1;
+            min-width: 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .chat-header.search-mode .header-info {
+            flex: 0;
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        .header-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .header-status {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .header-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .header-action-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+        .header-action-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .header-action-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 1.8;
+        }
+        .header-action-btn.cancel-search-btn {
+            display: none;
+            font-size: 14px;
+            color: #fff;
+            font-weight: 500;
+            padding: 0 12px;
+            width: auto;
+            white-space: nowrap;
+        }
+        .chat-header.search-mode .cancel-search-btn {
+            display: flex;
+        }
+        .chat-header.search-mode .hide-on-search {
+            display: none;
+        }
+
+        .search-bar {
+            flex: 1;
+            display: none;
+            align-items: center;
+            background: #1c1c1e;
+            border-radius: 10px;
+            padding: 0 12px;
+            height: 36px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .chat-header.search-mode .search-bar {
+            display: flex;
+        }
+        .search-bar svg {
+            width: 16px;
+            height: 16px;
+            stroke: #8e8e93;
+            fill: none;
+            stroke-width: 2;
+            flex-shrink: 0;
+        }
+        .search-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 14px;
+            padding: 0 8px;
+            font-family: var(--font-family);
+        }
+        .search-input::placeholder {
+            color: #6b6b70;
+        }
+        .search-nav {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+        .search-nav-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 14px;
+        }
+        .search-nav-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .search-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: default;
+        }
+        .search-count {
+            font-size: 11px;
+            color: #8e8e93;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 8px 12px 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+            background: var(--bg-primary);
+        }
+        /* Anchor short conversations to the bottom, like the real app */
+        .messages-container > :first-child {
+            margin-top: auto;
+        }
+        .messages-container::-webkit-scrollbar {
+            width: 0;
+        }
+
+        .date-separator {
+            display: flex;
+            justify-content: center;
+            margin: 16px 0 12px;
+            flex-shrink: 0;
+        }
+        .date-separator span {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            padding: 5px 14px;
+            border-radius: 20px;
+            border: 0.5px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .message-row {
+            display: flex;
+            flex-direction: column;
+            max-width: 72%;
+            margin-bottom: 2px;
+            position: relative;
+        }
+        .message-row.has-reaction {
+            margin-bottom: 16px;
+        }
+        .sender-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin: 2px 0 2px 12px;
+        }
+        .permalink-chip {
+            display: inline-block;
+            margin: 3px 4px 0;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+        .permalink-chip:hover {
+            text-decoration: underline;
+        }
+        .sent .permalink-chip {
+            align-self: flex-end;
+        }
+        .message-row.sent {
+            align-self: flex-end;
+            align-items: flex-end;
+        }
+        .message-row.received {
+            align-self: flex-start;
+            align-items: flex-start;
+        }
+        .message-row.action-log {
+            align-self: center;
+            align-items: center;
+            max-width: 90%;
+        }
+        .message-row.search-highlight {
+            background: var(--bg-search-highlight);
+            border-radius: 12px;
+            animation: highlightPulse 0.6s ease;
+        }
+        @keyframes highlightPulse {
+            0%, 100% { background: var(--bg-search-highlight); }
+            50% { background: rgba(255, 200, 0, 0.5); }
+        }
+        .search-highlight-text {
+            background: #FFC800;
+            color: #000;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+
+        .reply-preview {
+            display: flex;
+            align-items: stretch;
+            margin-bottom: 4px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-reply-preview);
+            cursor: pointer;
+            border: 0.5px solid rgba(255, 255, 255, 0.06);
+            min-height: 44px;
+            transition: background 0.15s;
+        }
+        .reply-preview:hover {
+            background: var(--bg-reply-hover);
+        }
+        .reply-preview:active {
+            transform: scale(0.98);
+        }
+        .reply-preview .reply-bar {
+            width: 4px;
+            min-width: 4px;
+            align-self: stretch;
+            margin: 8px 0 8px 8px;
+            border-radius: 2px;
+        }
+        .sent-reply .reply-bar {
+            background: var(--accent-blue);
+            box-shadow: 0 0 8px rgba(55, 151, 240, 0.3);
+        }
+        .received-reply .reply-bar {
+            background: #8e8e93;
+            box-shadow: 0 0 8px rgba(142, 142, 147, 0.3);
+        }
+        .reply-preview .reply-content {
+            padding: 8px 12px 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex: 1;
+            min-width: 0;
+        }
+        .reply-preview .reply-sender {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-reply-sender);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .reply-preview .reply-icon {
+            font-size: 12px;
+        }
+        .reply-preview .reply-text {
+            font-size: 12px;
+            color: var(--text-reply-preview);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: var(--bubble-radius);
+            font-size: 15px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+            position: relative;
+        }
+        .sent .message-bubble {
+            background: var(--bg-bubble-sent);
+            color: #ffffff;
+            border-bottom-right-radius: 6px;
+        }
+        .received .message-bubble {
+            background: var(--bg-bubble-received);
+            color: #ffffff;
+            border-bottom-left-radius: 6px;
+        }
+        .action-log .message-bubble {
+            background: transparent;
+            color: var(--text-tertiary);
+            font-size: 12px;
+            padding: 4px 10px;
+            text-align: center;
+        }
+        /* Bracketed placeholders ([Voice message], [Story share], ...) */
+        .message-bubble.meta {
+            font-style: italic;
+            font-size: 14px;
+            opacity: 0.85;
+        }
+
+        .media-bubble {
+            padding: 3px;
+            border-radius: 18px;
+            overflow: hidden;
+            max-width: 260px;
+            cursor: pointer;
+            position: relative;
+        }
+        .sent .media-bubble {
+            background: var(--bg-bubble-sent);
+            border-bottom-right-radius: 6px;
+        }
+        .received .media-bubble {
+            background: var(--bg-bubble-received);
+            border-bottom-left-radius: 6px;
+        }
+        .media-bubble img {
+            width: 100%;
+            height: auto;
+            max-height: 350px;
+            object-fit: cover;
+            border-radius: 15px;
+            display: block;
+            background: #1a1a1a;
+        }
+
+        .reel-share-bubble {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 18px;
+            cursor: pointer;
+            max-width: 260px;
+        }
+        .sent .reel-share-bubble {
+            background: var(--bg-bubble-sent);
+            border-bottom-right-radius: 6px;
+        }
+        .received .reel-share-bubble {
+            background: var(--bg-bubble-received);
+            border-bottom-left-radius: 6px;
+        }
+        .reel-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #f09433, #dc2743);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .reel-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: #fff;
+        }
+        .reel-label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .reel-owner {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .reaction-badge {
+            position: absolute;
+            bottom: -12px;
+            right: 10px;
+            background: #1c1c1e;
+            border-radius: 12px;
+            padding: 3px 6px;
+            font-size: 13px;
+            font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', var(--font-family);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+            z-index: 3;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            transition: transform 0.15s;
+        }
+        .reaction-badge:active {
+            transform: scale(1.1);
+        }
+        .received .reaction-badge {
+            right: auto;
+            left: 10px;
+        }
+        .reaction-badge .count-display {
+            font-size: 11px;
+            color: #aaa;
+            margin-left: 2px;
+        }
+
+        .message-timestamp {
+            font-size: 10px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+            padding: 0 6px;
+            opacity: 0.55;
+        }
+        .has-reaction .message-timestamp {
+            margin-top: 14px;
+        }
+        .sent .message-timestamp {
+            text-align: right;
+            margin-right: 2px;
+        }
+        .received .message-timestamp {
+            text-align: left;
+            margin-left: 2px;
+        }
+
+        .reaction-popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .reaction-popup-overlay.active {
+            display: flex;
+        }
+        .reaction-popup {
+            background: var(--bg-popup);
+            border-radius: 16px;
+            padding: 20px;
+            min-width: 240px;
+            max-width: 300px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            animation: slideUp 0.2s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .reaction-popup h3 {
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .reactor-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .reactor-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 0;
+        }
+        .reactor-emoji {
+            font-size: 24px;
+            width: 36px;
+            text-align: center;
+        }
+        .reactor-name {
+            font-size: 15px;
+            color: #e0e0e0;
+        }
+        .close-btn {
+            display: block;
+            margin: 16px auto 0;
+            padding: 8px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #fff;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .lightbox-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-lightbox);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .lightbox-overlay.active {
+            display: flex;
+        }
+        .lightbox-image {
+            max-width: 95%;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 2001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox-close:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .input-bar {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px 12px;
+            background: var(--bg-primary);
+            border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .input-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .input-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .input-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 1.8;
+        }
+        .input-field-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            background: var(--bg-input);
+            border-radius: 22px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 0 6px;
+            min-height: 40px;
+        }
+        .input-field {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #fff;
+            font-size: 15px;
+            padding: 8px 4px;
+            font-family: var(--font-family);
+        }
+        .input-field::placeholder {
+            color: #6b6b70;
+        }
+        .input-emoji-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            font-size: 18px;
+            opacity: 0.7;
+        }
+
+        .scroll-bottom-btn {
+            position: absolute;
+            bottom: 70px;
+            right: 16px;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #262626;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            transition: all 0.2s;
+            opacity: 0;
+            pointer-events: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .scroll-bottom-btn.visible {
+            opacity: 0.9;
+            pointer-events: auto;
+        }
+        .scroll-bottom-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: #fff;
+            stroke-width: 2.5;
+        }
+        
+        .info-bar {
+            padding: 6px 16px;
+            border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+            font-size: 10px;
+            letter-spacing: 0.02em;
+            color: var(--text-tertiary);
+            display: flex;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .info-bar-link {
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .info-bar-link:hover {
+            color: var(--accent-blue);
+        }
+        /* ============ Print / Save-as-PDF ============ */
+        @media print {
+            * {
+                transition: none !important;
+                animation: none !important;
+            }
+            /* Keep the chat look on paper: dark column, real bubble colors */
+            .phone-frame, .phone-frame * {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            body {
+                background: #fff;
+                display: block;
+                min-height: 0;
+            }
+            .phone-frame {
+                max-width: 560px;
+                width: 100%;
+                height: auto;
+                max-height: none;
+                margin: 0 auto;
+                border-radius: 0;
+                box-shadow: none;
+                overflow: visible;
+            }
+            .messages-container {
+                overflow: visible;
+            }
+            .messages-container > :first-child {
+                margin-top: 0;
+            }
+            .message-row {
+                break-inside: avoid;
+            }
+            /* Hide interactive chrome; the status bar stays — it carries the export time */
+            .back-btn, .header-actions, .search-bar,
+            .input-bar, .scroll-bottom-btn,
+            .reaction-popup-overlay, .lightbox-overlay {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-frame" id="phoneFrame">
+        <div class="status-bar">
+            <span class="time" id="statusTime">7:20 AM</span>
+            <span class="status-date" id="statusDate">Sep 30, 2026</span>
+        </div>
+
+        <div class="chat-header" id="chatHeader">
+            <div class="back-btn" title="Back">
+                <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="header-avatar" id="headerAvatar">IU</div>
+            <div class="header-info" id="headerInfo">
+                <div class="header-name" id="headerName">Instagram User</div>
+                <div class="header-status" id="headerStatus">Active 241 days ago</div>
+            </div>
+            
+            <div class="search-bar" id="searchBar">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke="#8e8e93" stroke-width="2" fill="none"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="#8e8e93" stroke-width="2"/></svg>
+                <input type="text" class="search-input" id="searchInput" placeholder="Search messages or dates...">
+                <div class="search-nav">
+                    <span class="search-count" id="searchCount">0/0</span>
+                    <button class="search-nav-btn" id="searchUpBtn" disabled>▲</button>
+                    <button class="search-nav-btn" id="searchDownBtn" disabled>▼</button>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <div class="header-action-btn" id="searchBtn" title="Search">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke="#fff" stroke-width="1.8" fill="none"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="#fff" stroke-width="1.8"/></svg>
+                </div>
+                <div class="header-action-btn cancel-search-btn" id="cancelSearchBtn">Cancel</div>
+                <div class="header-action-btn hide-on-search" title="Call">
+                    <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" stroke="#fff" stroke-width="1.8" fill="none"/></svg>
+                </div>
+                <div class="header-action-btn hide-on-search" title="Video">
+                    <svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17" fill="none" stroke="#fff" stroke-width="1.8"/><rect x="1" y="5" width="15" height="14" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+                </div>
+                <div class="header-action-btn hide-on-search" id="printBtn" title="Save as PDF">
+                    <svg viewBox="0 0 24 24"><path d="M12 3v10m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-bar">
+            <span id="infoBarText">320 messages · Exported with</span>&nbsp;<a class="info-bar-link" href="https://chromewebstore.google.com/detail/instagrow-%E2%80%94-creator-toolk/nakalihddjdkpgbekjhajjammlbkemoj" target="_blank" rel="noopener">Instagrow</a>
+        </div>
+
+        <div class="messages-container" id="messagesContainer"></div>
+
+        <div class="scroll-bottom-btn" id="scrollBottomBtn">
+            <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+
+        <div class="reaction-popup-overlay" id="reactionPopupOverlay">
+            <div class="reaction-popup">
+                <h3 id="reactionPopupTitle">Reactions</h3>
+                <div class="reactor-list" id="reactorList"></div>
+                <button class="close-btn" id="closeReactionPopup">Close</button>
+            </div>
+        </div>
+
+        <div class="lightbox-overlay" id="lightboxOverlay">
+            <button class="lightbox-close" id="lightboxClose">✕</button>
+            <img class="lightbox-image" id="lightboxImage" alt="Preview">
+        </div>
+
+        <div class="input-bar">
+            <div class="input-btn" title="Camera">
+                <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="15" rx="3" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12.5" r="3.5" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+            </div>
+            <div class="input-field-wrapper">
+                <input type="text" class="input-field" placeholder="Message..." id="messageInput" readonly>
+                <div class="input-emoji-btn">😊</div>
+            </div>
+            <div class="input-btn" title="Microphone">
+                <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" fill="none" stroke="#fff" stroke-width="1.8"/></svg>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CHAT DATA (injected from extension)
+        // ============================================
+        let chatData = null;
+        let extractionStats = null;
+        try {
+            chatData = {
+  "extractedAt": "2026-09-30T00:20:49.446Z",
+  "chatWith": "Instagram User",
+  "threadId": "340282366841710301244276190041852886584",
+  "participants": [
+    "me (53844247607)",
+    "benj_ivamas"
+  ],
+  "messageCount": 320,
+  "dateRange": {
+    "oldest": "2025-12-08 05:55:53 UTC",
+    "newest": "2026-01-31 16:38:58 UTC"
+  },
+  "messages": [
+    {
+      "id": "32561701097052801088241617048961024",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:55:53 UTC",
+      "timestampUnix": 1765173353,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32561701561895330267676696587010048",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:56:18 UTC",
+      "timestampUnix": 1765173378,
+      "type": "text",
+      "text": "หะ"
+    },
+    {
+      "id": "32561701678707529333523208659271680",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:56:24 UTC",
+      "timestampUnix": 1765173384,
+      "type": "text",
+      "text": "ไม่ต้องเลย"
+    },
+    {
+      "id": "32561701864259712409129141292498944",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:56:35 UTC",
+      "timestampUnix": 1765173395,
+      "type": "text",
+      "text": "🫵👁️👅👁️"
+    },
+    {
+      "id": "32561701987683003190064272149315584",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:56:41 UTC",
+      "timestampUnix": 1765173401,
+      "type": "text",
+      "text": "เจอแน่"
+    },
+    {
+      "id": "32561702050729989937283598309654528",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:56:45 UTC",
+      "timestampUnix": 1765173405,
+      "type": "text",
+      "text": "เอ้ะ"
+    },
+    {
+      "id": "32561702115073745899396558529495040",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:56:48 UTC",
+      "timestampUnix": 1765173408,
+      "type": "text",
+      "text": "หรือว่าจะเป็น"
+    },
+    {
+      "id": "32561702194079619687336450208038912",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:56:52 UTC",
+      "timestampUnix": 1765173412,
+      "type": "text",
+      "text": "😏"
+    },
+    {
+      "id": "32561702271002358007264543351242752",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:56:57 UTC",
+      "timestampUnix": 1765173417,
+      "type": "text",
+      "text": "เอาที่สบายใจเลย"
+    },
+    {
+      "id": "32561702387154329655968916861616128",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:03 UTC",
+      "timestampUnix": 1765173423,
+      "type": "text",
+      "text": "จีเวลๆๆๆๆๆ"
+    },
+    {
+      "id": "32561702454796363458461144910397440",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:07 UTC",
+      "timestampUnix": 1765173427,
+      "type": "text",
+      "text": "เอ้วๅๅๅๅๆๆๆๆ"
+    },
+    {
+      "id": "32561702470566983029165430744809472",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:57:07 UTC",
+      "timestampUnix": 1765173427,
+      "type": "text",
+      "text": "ถ้าคิดว่าจะทำอะไรได้"
+    },
+    {
+      "id": "32561702576285310209083018475208704",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:57:13 UTC",
+      "timestampUnix": 1765173433,
+      "type": "text",
+      "text": "5555"
+    },
+    {
+      "id": "32561702642576267582128611544530944",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:17 UTC",
+      "timestampUnix": 1765173437,
+      "type": "text",
+      "text": "6363643646657"
+    },
+    {
+      "id": "32561702818663297146305657276727296",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:26 UTC",
+      "timestampUnix": 1765173446,
+      "type": "text",
+      "text": "แต่คนเขาก็รู้กันหมดแล้วนะ"
+    },
+    {
+      "id": "32561702871099310873957627737407488",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:29 UTC",
+      "timestampUnix": 1765173449,
+      "type": "text",
+      "text": "👁️👅👁️"
+    },
+    {
+      "id": "32561702922410386807762568611889152",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:32 UTC",
+      "timestampUnix": 1765173452,
+      "type": "text",
+      "text": "เห้อ"
+    },
+    {
+      "id": "32561703015414885930686206596612096",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:57:37 UTC",
+      "timestampUnix": 1765173457,
+      "type": "text",
+      "text": "ก็ใช่"
+    },
+    {
+      "id": "32561703075395673324717604796891136",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:40 UTC",
+      "timestampUnix": 1765173460,
+      "type": "text",
+      "text": "แต่ตอนนี้โชกุนไม่อยากคุยกับพี่"
+    },
+    {
+      "id": "32561703217865983678264869788844032",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:57:48 UTC",
+      "timestampUnix": 1765173468,
+      "type": "text",
+      "text": "ท้อเลยกุ"
+    },
+    {
+      "id": "32561703501857039787421126893764608",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:58:03 UTC",
+      "timestampUnix": 1765173483,
+      "type": "text",
+      "text": "กูท้อกว่าดูแล้วจะไม่สมหวัง"
+    },
+    {
+      "id": "32561703650148552274820767670075392",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:58:11 UTC",
+      "timestampUnix": 1765173491,
+      "type": "text",
+      "text": "กุอะท้อ"
+    },
+    {
+      "id": "32561703709302685726677019733786624",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:58:15 UTC",
+      "timestampUnix": 1765173495,
+      "type": "text",
+      "text": "😭😭😭😭😭"
+    },
+    {
+      "id": "32561703786559826623173319628685312",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:58:19 UTC",
+      "timestampUnix": 1765173499,
+      "type": "text",
+      "text": "แกไม่รู้หรอก"
+    },
+    {
+      "id": "32561704488826690979765222396395520",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:58:57 UTC",
+      "timestampUnix": 1765173537,
+      "type": "text",
+      "text": "ปัญหาคนเรามันก็แตกต่างกันแหละ"
+    },
+    {
+      "id": "32561704554355189080012178568773632",
+      "sender": "me",
+      "timestamp": "2025-12-08 05:59:00 UTC",
+      "timestampUnix": 1765173540,
+      "type": "text",
+      "text": "😞"
+    },
+    {
+      "id": "32561704725931823697470575544893440",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:59:10 UTC",
+      "timestampUnix": 1765173550,
+      "type": "text",
+      "text": "มาก"
+    },
+    {
+      "id": "32561704977283192395861078310912000",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:59:23 UTC",
+      "timestampUnix": 1765173563,
+      "type": "text",
+      "text": "ฉันอุตส่าห์เดินมาได้เกือบครึ่งทาง"
+    },
+    {
+      "id": "32561705175850254391743900572188672",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 05:59:34 UTC",
+      "timestampUnix": 1765173574,
+      "type": "text",
+      "text": "โชๆจะตัดทิเงซะแล้ว"
+    },
+    {
+      "id": "32561706040778940017060364177899520",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:00:21 UTC",
+      "timestampUnix": 1765173621,
+      "type": "text",
+      "text": "แล้วแต่เวรแต่กรรมของคนเราละ"
+    },
+    {
+      "id": "32561706361549870776885747386417152",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:00:38 UTC",
+      "timestampUnix": 1765173638,
+      "type": "text",
+      "text": "แน่นอน"
+    },
+    {
+      "id": "32561706511847005513699459162177536",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:00:46 UTC",
+      "timestampUnix": 1765173646,
+      "type": "text",
+      "text": "น้องเลือกเมินแชทฉันละ"
+    },
+    {
+      "id": "32561706722016350108926714717405184",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:00:58 UTC",
+      "timestampUnix": 1765173658,
+      "type": "text",
+      "text": "อ่านไม่ตอบคือคำตอบของคนเบิ่ดใจจ"
+    },
+    {
+      "id": "32561707209839648587948416563150848",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:01:24 UTC",
+      "timestampUnix": 1765173684,
+      "type": "text",
+      "text": "แก่คงเครียปัญหาของแกอยู่หละยังไม่ว่าง"
+    },
+    {
+      "id": "32561707596993844228164235437277184",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:01:45 UTC",
+      "timestampUnix": 1765173705,
+      "type": "text",
+      "text": "ก็นะ"
+    },
+    {
+      "id": "32561707736713431445672153220907008",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:01:53 UTC",
+      "timestampUnix": 1765173713,
+      "type": "text",
+      "text": "สงสัยเมื่อวานโดนพ่อเทศ"
+    },
+    {
+      "id": "32561708209453657399104871640072192",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:02:19 UTC",
+      "timestampUnix": 1765173739,
+      "type": "text",
+      "text": "วันนี้เลยไม่กล้าที่อยากจะคุย"
+    },
+    {
+      "id": "32561708550631298790471446323789824",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:02:37 UTC",
+      "timestampUnix": 1765173757,
+      "type": "text",
+      "text": "รอดูไปก่อน"
+    },
+    {
+      "id": "32561708779355319358983528081522688",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:02:49 UTC",
+      "timestampUnix": 1765173769,
+      "type": "text",
+      "text": "อื้มมมม55555"
+    },
+    {
+      "id": "32561708862572381904766499588931584",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:02:54 UTC",
+      "timestampUnix": 1765173774,
+      "type": "text",
+      "text": "ก็รออยู่"
+    },
+    {
+      "id": "32561709470367216413650800993107968",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:03:27 UTC",
+      "timestampUnix": 1765173807,
+      "type": "text",
+      "text": "รอไปถ้าเขาไม่ตอบก็ต้องรอต่อไป"
+    },
+    {
+      "id": "32561709633728003262072290451390464",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:03:36 UTC",
+      "timestampUnix": 1765173816,
+      "type": "text",
+      "text": "😌"
+    },
+    {
+      "id": "32561711029850182698341203835879424",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:04:51 UTC",
+      "timestampUnix": 1765173891,
+      "type": "text",
+      "text": "ถ้านานก็ไม่รออะ"
+    },
+    {
+      "id": "32561711147880844550488452921032704",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:04:58 UTC",
+      "timestampUnix": 1765173898,
+      "type": "text",
+      "text": "สงสัยพ่อบอกให้เลิกคุย"
+    },
+    {
+      "id": "32561711184524803590822487048323072",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:05:00 UTC",
+      "timestampUnix": 1765173900,
+      "type": "text",
+      "text": "626636366363"
+    },
+    {
+      "id": "32561711581026610089229515560583168",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:05:21 UTC",
+      "timestampUnix": 1765173921,
+      "type": "text",
+      "text": "565656564"
+    },
+    {
+      "id": "32561713653066896496269893180588032",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:07:14 UTC",
+      "timestampUnix": 1765174034,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32561714953213986930961277226319872",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:08:24 UTC",
+      "timestampUnix": 1765174104,
+      "type": "text",
+      "text": "ไม่เป็นไรกูทำแบบนี้มาหลายคนละ"
+    },
+    {
+      "id": "32561715575646331309078181547343872",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:08:58 UTC",
+      "timestampUnix": 1765174138,
+      "type": "text",
+      "text": "😞"
+    },
+    {
+      "id": "32561715607210721114299258703446016",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:09:00 UTC",
+      "timestampUnix": 1765174140,
+      "type": "text",
+      "text": "คว"
+    },
+    {
+      "id": "32561715691013504677910655893766144",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:09:04 UTC",
+      "timestampUnix": 1765174144,
+      "type": "text",
+      "text": "คิดถึงโชกุน"
+    },
+    {
+      "id": "32561716015885072858345377588314112",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:09:22 UTC",
+      "timestampUnix": 1765174162,
+      "type": "text",
+      "text": "ถ้าโชไม่แคร์กุจะคิดสั้นกลับไปหาคนเก่า"
+    },
+    {
+      "id": "32561716088289613258811642835107840",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:09:26 UTC",
+      "timestampUnix": 1765174166,
+      "type": "text",
+      "text": "ก็โทรไป"
+    },
+    {
+      "id": "32561716208877049179807256902893568",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:09:32 UTC",
+      "timestampUnix": 1765174172,
+      "type": "text",
+      "text": "เครียจบๆไปเลย"
+    },
+    {
+      "id": "32561717371368650825118453443067904",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 06:10:35 UTC",
+      "timestampUnix": 1765174235,
+      "type": "text",
+      "text": "บ้าบอ"
+    },
+    {
+      "id": "32561717906170715158514039418519552",
+      "sender": "me",
+      "timestamp": "2025-12-08 06:11:04 UTC",
+      "timestampUnix": 1765174264,
+      "type": "text",
+      "text": "ไม่งั้นก็นั้งกังวลแบบนี้ต่อไป"
+    },
+    {
+      "id": "32561812700555054370948382619336704",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 07:36:43 UTC",
+      "timestampUnix": 1765179403,
+      "type": "text",
+      "text": "ตัดสินใจได้แล้วค่ะ"
+    },
+    {
+      "id": "32561812808503279314728202077732864",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 07:36:49 UTC",
+      "timestampUnix": 1765179409,
+      "type": "text",
+      "text": "โชกุนทำให้ตาสว่าง"
+    },
+    {
+      "id": "32561818408325133648056045723975680",
+      "sender": "me",
+      "timestamp": "2025-12-08 07:41:52 UTC",
+      "timestampUnix": 1765179712,
+      "type": "text",
+      "text": "สว่างขนาดไหน"
+    },
+    {
+      "id": "32561820536190912325828081656791040",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 07:43:48 UTC",
+      "timestampUnix": 1765179828,
+      "type": "text",
+      "text": "มาก"
+    },
+    {
+      "id": "32561820793377890065192527366979584",
+      "sender": "me",
+      "timestamp": "2025-12-08 07:44:02 UTC",
+      "timestampUnix": 1765179842,
+      "type": "text",
+      "text": "ทำไม"
+    },
+    {
+      "id": "32561822359439869177027368084045824",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 07:45:27 UTC",
+      "timestampUnix": 1765179927,
+      "type": "text",
+      "text": "ไม่รู้สิ"
+    },
+    {
+      "id": "32561822620938551982692536969854976",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 07:45:41 UTC",
+      "timestampUnix": 1765179941,
+      "type": "text",
+      "text": "เหมือนน้องซ่อนไรไว้"
+    },
+    {
+      "id": "32561822845759038591022866800574464",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-08 07:45:53 UTC",
+      "timestampUnix": 1765179953,
+      "type": "text",
+      "text": "เหมือนมีแต่คำโกหกแฝง"
+    },
+    {
+      "id": "32562924683504540776651214641168384",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-09 00:21:24 UTC",
+      "timestampUnix": 1765239684,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32582031507775912511273092713021440",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 00:04:27 UTC",
+      "timestampUnix": 1766275467,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32582222843019656245343734770696192",
+      "sender": "me",
+      "timestamp": "2025-12-21 02:57:19 UTC",
+      "timestampUnix": 1766285839,
+      "type": "text",
+      "text": "ตัดเพือนไปแล้วละ 20คน"
+    },
+    {
+      "id": "32582223074800468327566152617164800",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 02:57:32 UTC",
+      "timestampUnix": 1766285852,
+      "type": "text",
+      "text": "นี่ก็ตัด"
+    },
+    {
+      "id": "32582223188565209932203625633808384",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 02:57:38 UTC",
+      "timestampUnix": 1766285858,
+      "type": "text",
+      "text": "หายไปเพียบเลย"
+    },
+    {
+      "id": "32582223464396809968956305320181760",
+      "sender": "me",
+      "timestamp": "2025-12-21 02:57:53 UTC",
+      "timestampUnix": 1766285873,
+      "type": "text",
+      "text": "ผมผิดเองที่เลือกสังคมผิด"
+    },
+    {
+      "id": "32582223885658020830537031106953216",
+      "sender": "me",
+      "timestamp": "2025-12-21 02:58:16 UTC",
+      "timestampUnix": 1766285896,
+      "type": "link",
+      "text": "เพื่อนตอน ม.ต้น-ม.ปลายไปหมดละ"
+    },
+    {
+      "id": "32582224195838952518806866375999488",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 02:58:32 UTC",
+      "timestampUnix": 1766285912,
+      "type": "text",
+      "text": "ช่างหัวแม่พวกอีโก้สูงเอาตัวเองเป็นหลักสิคะ"
+    },
+    {
+      "id": "32582224444091194425837869632323584",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 02:58:46 UTC",
+      "timestampUnix": 1766285926,
+      "type": "text",
+      "text": "ดูพวกมันดิยังทนกันเองไม่ได้"
+    },
+    {
+      "id": "32582224805058964028081894028476416",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 02:59:05 UTC",
+      "timestampUnix": 1766285945,
+      "type": "text",
+      "text": "ออกมาคือเป็นสวรรค์ของคนปกติแบบพวกเรามาก"
+    },
+    {
+      "id": "32582224927975282941639265278230528",
+      "sender": "me",
+      "timestamp": "2025-12-21 02:59:12 UTC",
+      "timestampUnix": 1766285952,
+      "type": "text",
+      "text": "ผมต่างหากที่ทนไม่หด้แล้ว"
+    },
+    {
+      "id": "32582225204159621618569419010605056",
+      "sender": "me",
+      "timestamp": "2025-12-21 02:59:27 UTC",
+      "timestampUnix": 1766285967,
+      "type": "text",
+      "text": "ลองอ่านเล่นดูก็ได้"
+    },
+    {
+      "id": "32582225302996870537135574958997504",
+      "sender": "me",
+      "timestamp": "2025-12-21 02:59:32 UTC",
+      "timestampUnix": 1766285972,
+      "type": "placeholder",
+      "text": "Update to the latest version of Instagram to view this message."
+    },
+    {
+      "id": "32582229627261642348116857021530112",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:03:27 UTC",
+      "timestampUnix": 1766286207,
+      "type": "text",
+      "text": "ไม่หรอก เราก็แค่อยากเลือกสิ่งที่ดีกับตัวเอง ถูกมั้ย"
+    },
+    {
+      "id": "32582229799914810502972869720408064",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:03:36 UTC",
+      "timestampUnix": 1766286216,
+      "type": "text",
+      "text": "ใช่",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "☺️"
+        }
+      ]
+    },
+    {
+      "id": "32582230276776352677121555032965120",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:04:02 UTC",
+      "timestampUnix": 1766286242,
+      "type": "action_log",
+      "text": "Reacted ☺️ to your message"
+    },
+    {
+      "id": "32582230614426312518808209903845376",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:04:20 UTC",
+      "timestampUnix": 1766286260,
+      "type": "text",
+      "text": "จริงๆ"
+    },
+    {
+      "id": "32582230821666886004196673658552320",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:04:32 UTC",
+      "timestampUnix": 1766286272,
+      "type": "text",
+      "text": "หลังจากนี่ออกจากพวกคุณเฟย"
+    },
+    {
+      "id": "32582230932245284611494148405460992",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:04:38 UTC",
+      "timestampUnix": 1766286278,
+      "type": "text",
+      "text": "จากตรงนั้น"
+    },
+    {
+      "id": "32582231204540145747226716889153536",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:04:52 UTC",
+      "timestampUnix": 1766286292,
+      "type": "text",
+      "text": "นี่มีพวกคุณต้นกับคุณกิ๊ฟ"
+    },
+    {
+      "id": "32582231717863356236773038539931648",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:05:20 UTC",
+      "timestampUnix": 1766286320,
+      "type": "text",
+      "text": "ไม่ค่อยอยากให้ใครรู้ว่าเราเป็นพวกกันอยู่"
+    },
+    {
+      "id": "32582231927129179307270000257007616",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:05:31 UTC",
+      "timestampUnix": 1766286331,
+      "type": "text",
+      "text": "นี่บอกแค่เอกเลย5555"
+    },
+    {
+      "id": "32582232056976198223737081982615552",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:05:39 UTC",
+      "timestampUnix": 1766286339,
+      "type": "text",
+      "text": "ให้พวกเขาเป็นนกต่อไป"
+    },
+    {
+      "id": "32582232204309236335810848166510592",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:05:47 UTC",
+      "timestampUnix": 1766286347,
+      "type": "text",
+      "text": "เราจะเอาไปบอกคนพวกนั้นมั้ย"
+    },
+    {
+      "id": "32582232318988161683253219142139904",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:05:53 UTC",
+      "timestampUnix": 1766286353,
+      "type": "text",
+      "text": "ก็สุดแล้วแต่เรา"
+    },
+    {
+      "id": "32582232514807322894939971756490752",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:06:03 UTC",
+      "timestampUnix": 1766286363,
+      "type": "text",
+      "text": "ผมไม่ได้ว่าอะไรใครอยู่แล้วผมทนมา6-7ปีกับเรื่องพวกนี้เจอแค่นี้จิบๆ"
+    },
+    {
+      "id": "32582232756034362129171650504032256",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:06:16 UTC",
+      "timestampUnix": 1766286376,
+      "type": "text",
+      "text": "เยี่ยมมากกก"
+    },
+    {
+      "id": "32582233599246858101386502693978112",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:07:02 UTC",
+      "timestampUnix": 1766286422,
+      "type": "text",
+      "text": "คนเราต้องมีสังคมใหม่ รักคนอื่นเห็นใจคนอื่นได้ แต่ก็ต้องรักตัวเอง อาจจะดูเห็นแก่ตัว"
+    },
+    {
+      "id": "32582233656529200432083446555213824",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:07:05 UTC",
+      "timestampUnix": 1766286425,
+      "type": "text",
+      "text": "ที่อยู่ในดิสผมว่ามันยังดีกว่าไปคุยกับพวกนั้นเลยที่ผมตัดเพื่อนไป"
+    },
+    {
+      "id": "32582234054410122410929148565389312",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:07:27 UTC",
+      "timestampUnix": 1766286447,
+      "type": "text",
+      "text": "พี่มีเพื่อนที่คบกันมาตลอด4ปี ไม่เคยทะเลาะกันสักวันนอกจากด่า55555"
+    },
+    {
+      "id": "32582234367526281569463573978021888",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:07:44 UTC",
+      "timestampUnix": 1766286464,
+      "type": "text",
+      "text": "เอาเถอะะะะ",
+      "replyTo": {
+        "sender": "me",
+        "text": "ที่อยู่ในดิสผมว่ามันยังดีกว่าไปคุยกับพวกนั้นเลยที่ผมตัดเพื่อนไป"
+      }
+    },
+    {
+      "id": "32582234619007460005900770858762240",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:07:57 UTC",
+      "timestampUnix": 1766286477,
+      "type": "text",
+      "text": "ผมมีเพื่อนที่คบกันมา9ปีปัจจุบันก็ยังรักกันอยู่"
+    },
+    {
+      "id": "32582235091903690073964850955943936",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:08:23 UTC",
+      "timestampUnix": 1766286503,
+      "type": "text",
+      "text": "ไม่เคยทะเลาะ​กัน​เลยสักครั้ง"
+    },
+    {
+      "id": "32582235249349325520966561883488256",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:08:32 UTC",
+      "timestampUnix": 1766286512,
+      "type": "text",
+      "text": "เอาเถาะ",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "😔"
+        }
+      ]
+    },
+    {
+      "id": "32582235268881033294115414487334912",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:08:33 UTC",
+      "timestampUnix": 1766286513,
+      "type": "text",
+      "text": "😞"
+    },
+    {
+      "id": "32582235458511773037674455273308160",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:08:43 UTC",
+      "timestampUnix": 1766286523,
+      "type": "action_log",
+      "text": "Reacted 😔 to your message"
+    },
+    {
+      "id": "32582235532916715258981931716444160",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:08:47 UTC",
+      "timestampUnix": 1766286527,
+      "type": "text",
+      "text": "55256236363"
+    },
+    {
+      "id": "32582235728678267288926489401098240",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:08:58 UTC",
+      "timestampUnix": 1766286538,
+      "type": "text",
+      "text": "เรามีกลุ่มไอจี"
+    },
+    {
+      "id": "32582235851048119856044288893779968",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:09:04 UTC",
+      "timestampUnix": 1766286544,
+      "type": "text",
+      "text": "ที่อยู่กับคุณต้นใช่มั้ยละ"
+    },
+    {
+      "id": "32582236136796781740543592076673024",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:09:20 UTC",
+      "timestampUnix": 1766286560,
+      "type": "text",
+      "text": "คือว่านะ"
+    },
+    {
+      "id": "32582236384283409981539354102726656",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:09:33 UTC",
+      "timestampUnix": 1766286573,
+      "type": "text",
+      "text": "ใช่",
+      "replyTo": {
+        "sender": "benj_ivamas",
+        "text": "ที่อยู่กับคุณต้นใช่มั้ยละ"
+      }
+    },
+    {
+      "id": "32582236476728585377404044772900864",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:09:38 UTC",
+      "timestampUnix": 1766286578,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://scontent-bkk1-2.cdninstagram.com/v/t1.15752-9/598252014_882468000944679_8479779256995592054_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=107&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=aQdmwxvEmqgQ7kNvwFqHtug&_nc_oc=AdrM6_Gc-2CKrufg01U2Eh3GPVFCpDR6J0J3OhUL9RSmWD-L6MRxoUp_XOoN17jcXYw&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=scontent-bkk1-2.cdninstagram.com&_nc_ss=7a22e&oh=03_Q7cD6gGxYbf33E7SxsTCAmMms1rIYZPnT1lc_RWrBayx1fW6Tw&oe=6AE3CEB2&ig_cache_key=ODgyNDY3OTkwOTQ0Njgw.2-ccb7-5-w720h1280.f"
+    },
+    {
+      "id": "32582236780382265802400271169486848",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:09:55 UTC",
+      "timestampUnix": 1766286595,
+      "type": "text",
+      "text": "เราจะเอาไปบอกพวกนั้นมั้ยละ"
+    },
+    {
+      "id": "32582236948982167775428231510884352",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:10:04 UTC",
+      "timestampUnix": 1766286604,
+      "type": "text",
+      "text": "เขารู่แล้วละ"
+    },
+    {
+      "id": "32582237060701239249267610091520000",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:10 UTC",
+      "timestampUnix": 1766286610,
+      "type": "text",
+      "text": "ว่าไงหรอ"
+    },
+    {
+      "id": "32582237208251155731415979473764352",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:18 UTC",
+      "timestampUnix": 1766286618,
+      "type": "text",
+      "text": "ว่าพี่อยู่กับคุณต้น💔"
+    },
+    {
+      "id": "32582237305911096549709844418920448",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:23 UTC",
+      "timestampUnix": 1766286623,
+      "type": "text",
+      "text": "รู้ได้ไง"
+    },
+    {
+      "id": "32582237333641957788508897396391936",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:25 UTC",
+      "timestampUnix": 1766286625,
+      "type": "text",
+      "text": "เฮล"
+    },
+    {
+      "id": "32582237426874015946325816409849856",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:30 UTC",
+      "timestampUnix": 1766286630,
+      "type": "text",
+      "text": "หรือยังไม่เนียน63636636363"
+    },
+    {
+      "id": "32582237435158430263084702331043840",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:30 UTC",
+      "timestampUnix": 1766286630,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32582237834356449768793266326601728",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:10:52 UTC",
+      "timestampUnix": 1766286652,
+      "type": "text",
+      "text": "ก็โพสในไอจีขนาดนั้นใครจะไม่เห็น7252655"
+    },
+    {
+      "id": "32582237943819890270787588354736128",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:10:58 UTC",
+      "timestampUnix": 1766286658,
+      "type": "text",
+      "text": "เอ้า"
+    },
+    {
+      "id": "32582237988208677916980430308900864",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:11:00 UTC",
+      "timestampUnix": 1766286660,
+      "type": "text",
+      "text": "52552626363663"
+    },
+    {
+      "id": "32582238064208451843924539746549760",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:11:04 UTC",
+      "timestampUnix": 1766286664,
+      "type": "text",
+      "text": "ขอโทษได้มั้ยละ"
+    },
+    {
+      "id": "32582238162934005727124384359907328",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:11:10 UTC",
+      "timestampUnix": 1766286670,
+      "type": "text",
+      "text": "นึกว่าไม่รู้ไอจีเขา"
+    },
+    {
+      "id": "32582238315776329977508171519885312",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:11:18 UTC",
+      "timestampUnix": 1766286678,
+      "type": "text",
+      "text": "เห็นไม่ฟอลกัน"
+    },
+    {
+      "id": "32582238356374772885155543355752448",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:11:20 UTC",
+      "timestampUnix": 1766286680,
+      "type": "text",
+      "text": "😭"
+    },
+    {
+      "id": "32582238557933564728400728117215232",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:11:31 UTC",
+      "timestampUnix": 1766286691,
+      "type": "text",
+      "text": "ผมแค่ลืม"
+    },
+    {
+      "id": "32582239164375478133431023586770944",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:12:04 UTC",
+      "timestampUnix": 1766286724,
+      "type": "text",
+      "text": "เอาเถะขอนอนพักซักหน่อยก็แล้วกัน"
+    },
+    {
+      "id": "32582239278985615572222531644424192",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:12:10 UTC",
+      "timestampUnix": 1766286730,
+      "type": "text",
+      "text": "พักๆๆๆ"
+    },
+    {
+      "id": "32582239469025485652592376575688704",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:12:20 UTC",
+      "timestampUnix": 1766286740,
+      "type": "text",
+      "text": "ฝันดีผีลากตกเตียง"
+    },
+    {
+      "id": "32582240147076165365493180944875520",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:12:57 UTC",
+      "timestampUnix": 1766286777,
+      "type": "text",
+      "text": "ลองให้ผีมาดิจะเห็นรายการคนต่อยผี",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "😂"
+        }
+      ]
+    },
+    {
+      "id": "32582240253052728515698628688347136",
+      "sender": "me",
+      "timestamp": "2025-12-21 03:13:03 UTC",
+      "timestampUnix": 1766286783,
+      "type": "text",
+      "text": "5665655"
+    },
+    {
+      "id": "32582274698910916001771214036008960",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-21 03:44:10 UTC",
+      "timestampUnix": 1766288650,
+      "type": "action_log",
+      "text": "Reacted 😂 to your message"
+    },
+    {
+      "id": "32588386993581408926992466555437056",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-24 23:46:38 UTC",
+      "timestampUnix": 1766619998,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32588445301539245863725639091093504",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-25 00:39:19 UTC",
+      "timestampUnix": 1766623159,
+      "type": "media",
+      "text": "[Photo]",
+      "mediaUrl": "https://scontent-bkk1-1.cdninstagram.com/v/t1.15752-9/600983124_4069947419933699_7760922508397908996_n.jpg?stp=dst-jpg_e15_tt6&_nc_cat=108&_nc_cps=0&ccb=7-5&_nc_sid=61c521&_nc_ohc=dkT9SRJkTg4Q7kNvwE0lVui&_nc_oc=AdofmIg_UTad5ynhV3RE7AEXfcXj6ToLtMjFEvBi8BLyrOU5o2oCWUO7PabJho4nEY4&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=scontent-bkk1-1.cdninstagram.com&_nc_ss=7a22e&oh=03_Q7cD6gEoRWVAwZyIr4aYAdzLKPmO-YnZZILIZqGBzTdoEPSilQ&oe=6AE3AE8D&ig_cache_key=MTQyNjE3MDM0OTA3ODI2MQ%3D%3D.2-ccb7-5-w1240h1748.f"
+    },
+    {
+      "id": "32588490849511767252713762992422912",
+      "sender": "me",
+      "timestamp": "2025-12-25 01:20:28 UTC",
+      "timestampUnix": 1766625628,
+      "type": "text",
+      "text": "ใช่",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "😂"
+        }
+      ]
+    },
+    {
+      "id": "32588645694000203513026182454968320",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-25 03:40:22 UTC",
+      "timestampUnix": 1766634022,
+      "type": "action_log",
+      "text": "Reacted 😂 to your message"
+    },
+    {
+      "id": "32598801005966069553563724465307648",
+      "sender": "me",
+      "timestamp": "2025-12-31 12:35:43 UTC",
+      "timestampUnix": 1767184543,
+      "type": "clip",
+      "text": "[Clip by @_khunsaen_]",
+      "clipCaption": "#fpy #วันสิ้นปี #ปีใหม่2569🎉  #สิ่งใหม่ #ภูมิใจในตัวเอง",
+      "permalink": "https://www.instagram.com/reel/DS5_-K-EwTi/",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "💐"
+        }
+      ]
+    },
+    {
+      "id": "32598907064585133552330718008311808",
+      "sender": "benj_ivamas",
+      "timestamp": "2025-12-31 14:11:33 UTC",
+      "timestampUnix": 1767190293,
+      "type": "action_log",
+      "text": "Reacted 💐 to your message"
+    },
+    {
+      "id": "32610101181537285541364855652483072",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:45:27 UTC",
+      "timestampUnix": 1767797127,
+      "type": "text",
+      "text": "คุณเบ็ญผมสงใส เพชรเขาจีบ jewel ไปถึงไหนแล้ว"
+    },
+    {
+      "id": "32610102854589365709791041717010432",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:46:57 UTC",
+      "timestampUnix": 1767797217,
+      "type": "text",
+      "text": "อื้มมม"
+    },
+    {
+      "id": "32610102995673237225502370519056384",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:47:05 UTC",
+      "timestampUnix": 1767797225,
+      "type": "text",
+      "text": "เราเคยเห็นหน้าจีเวลยัง"
+    },
+    {
+      "id": "32610103119933069403436155832107008",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:47:12 UTC",
+      "timestampUnix": 1767797232,
+      "type": "text",
+      "text": "ยัง"
+    },
+    {
+      "id": "32610103352715595029093223459979264",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:47:24 UTC",
+      "timestampUnix": 1767797244,
+      "type": "text",
+      "text": "เพชรกับจีเวลเขาแลกรูปกันแล้ว"
+    },
+    {
+      "id": "32610103501302827270738502058246144",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:47:33 UTC",
+      "timestampUnix": 1767797253,
+      "type": "text",
+      "text": "เขาตั้งดิสคู่กันแล้ว"
+    },
+    {
+      "id": "32610103931367894315449701030166528",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:47:56 UTC",
+      "timestampUnix": 1767797276,
+      "type": "text",
+      "text": "WTF"
+    },
+    {
+      "id": "32610104473606984883090177254227968",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:48:25 UTC",
+      "timestampUnix": 1767797305,
+      "type": "text",
+      "text": "พี่มีหลักฐาน"
+    },
+    {
+      "id": "32610104773530235594292342156165120",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:48:42 UTC",
+      "timestampUnix": 1767797322,
+      "type": "text",
+      "text": "รู้ไหมกิฟเขาเล่าเรื่อง​ทั้งสิงคนให้ต้นฟังจนต้นหมดใจละ"
+    },
+    {
+      "id": "32610105188501235853946626808741888",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:49:04 UTC",
+      "timestampUnix": 1767797344,
+      "type": "text",
+      "text": "ไหนหลักฐาน"
+    },
+    {
+      "id": "32610105519858476336512816046407680",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:49:22 UTC",
+      "timestampUnix": 1767797362,
+      "type": "text",
+      "text": "แปป"
+    },
+    {
+      "id": "32610106035218207371796672195592192",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:49:50 UTC",
+      "timestampUnix": 1767797390,
+      "type": "placeholder",
+      "text": "Update to the latest version of Instagram to view this message."
+    },
+    {
+      "id": "32610106161194619766253573543821312",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:49:57 UTC",
+      "timestampUnix": 1767797397,
+      "type": "text",
+      "text": "ไม่ต้องให้ต้นน้ำดู"
+    },
+    {
+      "id": "32610106330336007464821204063354880",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:50:06 UTC",
+      "timestampUnix": 1767797406,
+      "type": "text",
+      "text": "ไม่ต้องบอกอะไรมันทั้งนั้น"
+    },
+    {
+      "id": "32610106508075238108704119495589888",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:50:16 UTC",
+      "timestampUnix": 1767797416,
+      "type": "text",
+      "text": "ให้เวลานำพาเถอะ"
+    },
+    {
+      "id": "32610106546252508963188965262753792",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:50:18 UTC",
+      "timestampUnix": 1767797418,
+      "type": "text",
+      "text": "มีมีดมะจะจ่วงตัวเอง"
+    },
+    {
+      "id": "32610106664881490959366983654572032",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:50:24 UTC",
+      "timestampUnix": 1767797424,
+      "type": "text",
+      "text": "555"
+    },
+    {
+      "id": "32610106704374955450255079639089152",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:50:26 UTC",
+      "timestampUnix": 1767797426,
+      "type": "text",
+      "text": "หยอกๆ"
+    },
+    {
+      "id": "32610106790450968179557852294152192",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:50:31 UTC",
+      "timestampUnix": 1767797431,
+      "type": "text",
+      "text": "5555555"
+    },
+    {
+      "id": "32610107360173383127272273022550016",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:51:02 UTC",
+      "timestampUnix": 1767797462,
+      "type": "text",
+      "text": "เขาคาสายกันตลอดลูด"
+    },
+    {
+      "id": "32610107455880920552804719024668672",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:51:07 UTC",
+      "timestampUnix": 1767797467,
+      "type": "text",
+      "text": "คาทุกวัน"
+    },
+    {
+      "id": "32610107496937469902778593865367552",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:51:09 UTC",
+      "timestampUnix": 1767797469,
+      "type": "text",
+      "text": "ภาพพวกนี้บางส่วนต้นเห็นละ"
+    },
+    {
+      "id": "32610107583604018250113030396313600",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:51:14 UTC",
+      "timestampUnix": 1767797474,
+      "type": "text",
+      "text": "กิฟส่งให้ดู"
+    },
+    {
+      "id": "32610107727679121551096731540652032",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:51:22 UTC",
+      "timestampUnix": 1767797482,
+      "type": "text",
+      "text": "เมื่อกี้ที่ออกดิส"
+    },
+    {
+      "id": "32610108695138002024815634780520448",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:52:14 UTC",
+      "timestampUnix": 1767797534,
+      "type": "raven_media",
+      "text": "[Disappearing photo/video]"
+    },
+    {
+      "id": "32610108846142864544761287213580288",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:52:22 UTC",
+      "timestampUnix": 1767797542,
+      "type": "text",
+      "text": "จีเวลโทรหาเพชรทันที"
+    },
+    {
+      "id": "32610109465602442328423602453479424",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:52:56 UTC",
+      "timestampUnix": 1767797576,
+      "type": "text",
+      "text": "ผมคลิ้น"
+    },
+    {
+      "id": "32610109652788213718965031849164800",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:53:06 UTC",
+      "timestampUnix": 1767797586,
+      "type": "text",
+      "text": "63636636363636"
+    },
+    {
+      "id": "32610109799435088291729023841599488",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:53:14 UTC",
+      "timestampUnix": 1767797594,
+      "type": "text",
+      "text": "พี่ก็ถามแล้ว"
+    },
+    {
+      "id": "32610109997266365006743793217568768",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:53:25 UTC",
+      "timestampUnix": 1767797605,
+      "type": "text",
+      "text": "จีเวลเคยปฏิเสธเพรชแล้ว"
+    },
+    {
+      "id": "32610110070120268092845623141728256",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:53:29 UTC",
+      "timestampUnix": 1767797609,
+      "type": "text",
+      "text": "แต่เพรชไม่ยอม"
+    },
+    {
+      "id": "32610111775247602196870198684811264",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:55:01 UTC",
+      "timestampUnix": 1767797701,
+      "type": "text",
+      "text": "รู้ไหมผมอ่านไปยิ้มไปทั้งที่มันเป็นเรื่องน่าเครียด"
+    },
+    {
+      "id": "32610111792794975263266041111773184",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:55:02 UTC",
+      "timestampUnix": 1767797702,
+      "type": "text",
+      "text": "แล้วเขาก็ไม่รังเกียจเพรชที่ทำแบบนี้นะ"
+    },
+    {
+      "id": "32610112135691908542534567134756864",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:55:21 UTC",
+      "timestampUnix": 1767797721,
+      "type": "text",
+      "text": "เขาก็แอบมีเขินๆ"
+    },
+    {
+      "id": "32610112262171105393464496021831680",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:55:27 UTC",
+      "timestampUnix": 1767797727,
+      "type": "text",
+      "text": "เพราะเพรชเขาใส่ใจจริงๅ"
+    },
+    {
+      "id": "32610112784172180804117854620221440",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:55:56 UTC",
+      "timestampUnix": 1767797756,
+      "type": "text",
+      "text": "มันจี้ตั้งแต่ต้นน้ำจำสีที่จีเวลชอบไม่ได้ละ"
+    },
+    {
+      "id": "32610113352489415022017450254270464",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:56:27 UTC",
+      "timestampUnix": 1767797787,
+      "type": "text",
+      "text": "เห็นแล้วเหนื่อยใจ"
+    },
+    {
+      "id": "32610113719712918261514152632647680",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:56:46 UTC",
+      "timestampUnix": 1767797806,
+      "type": "text",
+      "text": "แต่ทำไมผมหุปยิ้มไม่ได้เลย",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "😂"
+        }
+      ]
+    },
+    {
+      "id": "32610113807732313925726300260007936",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:56:51 UTC",
+      "timestampUnix": 1767797811,
+      "type": "action_log",
+      "text": "Reacted 😂 to your message"
+    },
+    {
+      "id": "32610114049624266050094839795548160",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:57:04 UTC",
+      "timestampUnix": 1767797824,
+      "type": "text",
+      "text": "แปลกคนจริงๆ"
+    },
+    {
+      "id": "32610114370572949635814488243437568",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:57:22 UTC",
+      "timestampUnix": 1767797842,
+      "type": "text",
+      "text": "เพชรนี้ร้ายจริงๆ​"
+    },
+    {
+      "id": "32610115355125394824971905230962688",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:58:15 UTC",
+      "timestampUnix": 1767797895,
+      "type": "text",
+      "text": "ว่าแต่ไปเอาภาพมาได้ไง?"
+    },
+    {
+      "id": "32610115891320926205695510735486976",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:58:44 UTC",
+      "timestampUnix": 1767797924,
+      "type": "text",
+      "text": "พี่สนิทกับเพชร"
+    },
+    {
+      "id": "32610116068394137154797142806626304",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:58:54 UTC",
+      "timestampUnix": 1767797934,
+      "type": "text",
+      "text": "เข้าใจละ",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "😂"
+        }
+      ]
+    },
+    {
+      "id": "32610116146448214288765842750439424",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:58:58 UTC",
+      "timestampUnix": 1767797938,
+      "type": "action_log",
+      "text": "Reacted 😂 to your message"
+    },
+    {
+      "id": "32610116365704572588655013108121600",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:59:10 UTC",
+      "timestampUnix": 1767797950,
+      "type": "text",
+      "text": "งงละสิว่าได้ไง"
+    },
+    {
+      "id": "32610116602438187880715855887073280",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:59:23 UTC",
+      "timestampUnix": 1767797963,
+      "type": "text",
+      "text": "ก็งงจริงอะแหละ"
+    },
+    {
+      "id": "32610116822863977521157843269451776",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:59:35 UTC",
+      "timestampUnix": 1767797975,
+      "type": "text",
+      "text": "แล้วพี่ก็สนิทกับจีเวล"
+    },
+    {
+      "id": "32610116947134877745535854313472000",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:59:41 UTC",
+      "timestampUnix": 1767797981,
+      "type": "text",
+      "text": "63635255252552525"
+    },
+    {
+      "id": "32610117115453522211671965121380352",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:59:51 UTC",
+      "timestampUnix": 1767797991,
+      "type": "text",
+      "text": "ถึงไม่มาก"
+    },
+    {
+      "id": "32610117116584492090831097730957312",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:59:51 UTC",
+      "timestampUnix": 1767797991,
+      "type": "text",
+      "text": "WTF"
+    },
+    {
+      "id": "32610117235511739491936925862854656",
+      "sender": "me",
+      "timestamp": "2026-01-07 14:59:57 UTC",
+      "timestampUnix": 1767797997,
+      "type": "text",
+      "text": "How"
+    },
+    {
+      "id": "32610117236700890401904538398228480",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 14:59:57 UTC",
+      "timestampUnix": 1767797997,
+      "type": "text",
+      "text": "แต่สนิทต่อจากเพชร"
+    },
+    {
+      "id": "32610117370863506647671896014848000",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 15:00:04 UTC",
+      "timestampUnix": 1767798004,
+      "type": "text",
+      "text": "ง่ายนิดเดียว"
+    },
+    {
+      "id": "32610118044220098736368051912966144",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 15:00:41 UTC",
+      "timestampUnix": 1767798041,
+      "type": "text",
+      "text": "ทักทุกเทศกาล"
+    },
+    {
+      "id": "32610118219467930572399829013495808",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 15:00:50 UTC",
+      "timestampUnix": 1767798050,
+      "type": "text",
+      "text": "แล้วจีเวลจะทักมาตอนคิดถึง"
+    },
+    {
+      "id": "32610118512114660169542450475433984",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 15:01:06 UTC",
+      "timestampUnix": 1767798066,
+      "type": "text",
+      "text": "มาปุ้บ i miss ben แล้ว"
+    },
+    {
+      "id": "32610118555111511848165390793310208",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 15:01:09 UTC",
+      "timestampUnix": 1767798069,
+      "type": "text",
+      "text": "636366363636"
+    },
+    {
+      "id": "32610118718754976602772405420556288",
+      "sender": "me",
+      "timestamp": "2026-01-07 15:01:17 UTC",
+      "timestampUnix": 1767798077,
+      "type": "text",
+      "text": "อาาาา"
+    },
+    {
+      "id": "32610119072258658597215407655878656",
+      "sender": "me",
+      "timestamp": "2026-01-07 15:01:37 UTC",
+      "timestampUnix": 1767798097,
+      "type": "text",
+      "text": "เอาเถาะมาตรผมก็ยังคงเดิม",
+      "reactions": [
+        {
+          "user": "benj_ivamas",
+          "emoji": "☺️"
+        }
+      ]
+    },
+    {
+      "id": "32610120627479338642978555211808768",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-07 15:03:01 UTC",
+      "timestampUnix": 1767798181,
+      "type": "action_log",
+      "text": "Reacted ☺️ to your message"
+    },
+    {
+      "id": "32648294237259753787903701313126400",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:52:56 UTC",
+      "timestampUnix": 1769867576,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32648294768516150996147500662915072",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:53:25 UTC",
+      "timestampUnix": 1769867605,
+      "type": "text",
+      "text": "ไม่แปลกใจ"
+    },
+    {
+      "id": "32648294901897049568303268610703360",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:53:33 UTC",
+      "timestampUnix": 1769867613,
+      "type": "text",
+      "text": "ทำไมผู้หญิงไม่เอา"
+    },
+    {
+      "id": "32648294933257879552670960864722944",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:53:34 UTC",
+      "timestampUnix": 1769867614,
+      "type": "text",
+      "text": "5555"
+    },
+    {
+      "id": "32648294977084465779729356814286848",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:53:37 UTC",
+      "timestampUnix": 1769867617,
+      "type": "text",
+      "text": "สมน้ำหน้า"
+    },
+    {
+      "id": "32648295029061893449708907821793280",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:53:39 UTC",
+      "timestampUnix": 1769867619,
+      "type": "text",
+      "text": "แล้วไง"
+    },
+    {
+      "id": "32648295078417817425885447030046720",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:53:42 UTC",
+      "timestampUnix": 1769867622,
+      "type": "text",
+      "text": "555"
+    },
+    {
+      "id": "32648295242654566363391108256366592",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:53:51 UTC",
+      "timestampUnix": 1769867631,
+      "type": "text",
+      "text": "กูบอกว่าไง"
+    },
+    {
+      "id": "32648295288268845005376770562588672",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:53:53 UTC",
+      "timestampUnix": 1769867633,
+      "type": "text",
+      "text": "้ข้าคุย"
+    },
+    {
+      "id": "32648295366645611033426871692820480",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:53:58 UTC",
+      "timestampUnix": 1769867638,
+      "type": "text",
+      "text": "ขี้ปอดวะ"
+    },
+    {
+      "id": "32648296278171989674042527510953984",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:54:47 UTC",
+      "timestampUnix": 1769867687,
+      "type": "raven_media",
+      "text": "[Disappearing photo/video]"
+    },
+    {
+      "id": "32648296357104980376147192751063040",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:54:51 UTC",
+      "timestampUnix": 1769867691,
+      "type": "text",
+      "text": "ปอดหรอ"
+    },
+    {
+      "id": "32648296409032306689222548616380416",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:54:54 UTC",
+      "timestampUnix": 1769867694,
+      "type": "text",
+      "text": "525636363626"
+    },
+    {
+      "id": "32648296414541832635205527816634368",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:54:55 UTC",
+      "timestampUnix": 1769867695,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32648296470833068300310204888645632",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:54:58 UTC",
+      "timestampUnix": 1769867698,
+      "type": "text",
+      "text": "ok"
+    },
+    {
+      "id": "32648296472526442512788594307891200",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:54:58 UTC",
+      "timestampUnix": 1769867698,
+      "type": "text",
+      "text": "อะไรวะ"
+    },
+    {
+      "id": "32648296560915972096839724088426496",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:02 UTC",
+      "timestampUnix": 1769867702,
+      "type": "text",
+      "text": "เล่นให้จบก่อน"
+    },
+    {
+      "id": "32648296591990822207832697163743232",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:04 UTC",
+      "timestampUnix": 1769867704,
+      "type": "text",
+      "text": "ไป"
+    },
+    {
+      "id": "32648296630874013064530260052148224",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:06 UTC",
+      "timestampUnix": 1769867706,
+      "type": "text",
+      "text": "ปิดคืออวัยวะใช่มั้ย"
+    },
+    {
+      "id": "32648296721474569393256216689377280",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:11 UTC",
+      "timestampUnix": 1769867711,
+      "type": "text",
+      "text": "จบแน่"
+    },
+    {
+      "id": "32648296787581225346261377628504064",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:15 UTC",
+      "timestampUnix": 1769867715,
+      "type": "text",
+      "text": "แต่แบบว่านะ"
+    },
+    {
+      "id": "32648296879160160087168741464342528",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:20 UTC",
+      "timestampUnix": 1769867720,
+      "type": "text",
+      "text": "เก่งแต่รุมแบบนี้"
+    },
+    {
+      "id": "32648296926935585477853919999688704",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:22 UTC",
+      "timestampUnix": 1769867722,
+      "type": "text",
+      "text": "กากจัง"
+    },
+    {
+      "id": "32648297022546037689326432631652352",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:27 UTC",
+      "timestampUnix": 1769867727,
+      "type": "text",
+      "text": "ได้ข่าวว่าผู้หญิงไม่เอา"
+    },
+    {
+      "id": "32648297027916032463135872783482880",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:28 UTC",
+      "timestampUnix": 1769867728,
+      "type": "text",
+      "text": "ได้"
+    },
+    {
+      "id": "32648297110906513651461469868392448",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:32 UTC",
+      "timestampUnix": 1769867732,
+      "type": "text",
+      "text": "รุมอะไร"
+    },
+    {
+      "id": "32648297203460801538522152536375296",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:37 UTC",
+      "timestampUnix": 1769867737,
+      "type": "text",
+      "text": "อะไรน้ะะะ"
+    },
+    {
+      "id": "32648297217161659530668079260368896",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:38 UTC",
+      "timestampUnix": 1769867738,
+      "type": "text",
+      "text": "มึงทำไว้หลานคน"
+    },
+    {
+      "id": "32648297317206764357692589229473792",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:43 UTC",
+      "timestampUnix": 1769867743,
+      "type": "text",
+      "text": "กูพูดเองคนเดียว"
+    },
+    {
+      "id": "32648297336238159538074291374391296",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:44 UTC",
+      "timestampUnix": 1769867744,
+      "type": "text",
+      "text": "อะไรหรอ"
+    },
+    {
+      "id": "32648297376776373826321001524232192",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:47 UTC",
+      "timestampUnix": 1769867747,
+      "type": "text",
+      "text": "ทำอะไร"
+    },
+    {
+      "id": "32648297425276258197012975280193536",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:49 UTC",
+      "timestampUnix": 1769867749,
+      "type": "text",
+      "text": "คนอื่นแค่ฟัง"
+    },
+    {
+      "id": "32648297436192266576583192125374464",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:55:50 UTC",
+      "timestampUnix": 1769867750,
+      "type": "text",
+      "text": "พูดมาสิ"
+    },
+    {
+      "id": "32648297593841923013040130693791744",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:55:58 UTC",
+      "timestampUnix": 1769867758,
+      "type": "text",
+      "text": "เข้ามาสิ"
+    },
+    {
+      "id": "32648297618413539521543464732852224",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:00 UTC",
+      "timestampUnix": 1769867760,
+      "type": "text",
+      "text": "อย่าบอกนะว่า"
+    },
+    {
+      "id": "32648297707193014828568740724998144",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:05 UTC",
+      "timestampUnix": 1769867765,
+      "type": "text",
+      "text": "จะใส่ร้ายคนอื่น"
+    },
+    {
+      "id": "32648297798285103099882762074587136",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:10 UTC",
+      "timestampUnix": 1769867770,
+      "type": "text",
+      "text": "เหมือนที่ใส่ร้ายจีเวล"
+    },
+    {
+      "id": "32648297840125509945780776892104704",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:12 UTC",
+      "timestampUnix": 1769867772,
+      "type": "text",
+      "text": "รึเปล่าน้า"
+    },
+    {
+      "id": "32648297854862521552546969130369024",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:56:13 UTC",
+      "timestampUnix": 1769867773,
+      "type": "text",
+      "text": "ทุกคนรู้หมดแล้วมึงทำไรไว้"
+    },
+    {
+      "id": "32648297960778911423583976316469248",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:18 UTC",
+      "timestampUnix": 1769867778,
+      "type": "text",
+      "text": "ทำอะไรหรอ"
+    },
+    {
+      "id": "32648298008549134832440368758259712",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:56:21 UTC",
+      "timestampUnix": 1769867781,
+      "type": "text",
+      "text": "มาๆ"
+    },
+    {
+      "id": "32648298022481407228990981807276032",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:22 UTC",
+      "timestampUnix": 1769867782,
+      "type": "text",
+      "text": "เล่ามาสิ"
+    },
+    {
+      "id": "32648298165647731683183381891252224",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:56:29 UTC",
+      "timestampUnix": 1769867789,
+      "type": "text",
+      "text": "คนอื่นกูสั่งปิดไมเอง"
+    },
+    {
+      "id": "32648298312914029475198466917400576",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:56:37 UTC",
+      "timestampUnix": 1769867797,
+      "type": "text",
+      "text": "มึงทำไว้เยาะ"
+    },
+    {
+      "id": "32648298397645256114783739550105600",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:56:42 UTC",
+      "timestampUnix": 1769867802,
+      "type": "text",
+      "text": "เข้ามาง่ายกว่า"
+    },
+    {
+      "id": "32648298439727665796184749975273472",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:44 UTC",
+      "timestampUnix": 1769867804,
+      "type": "text",
+      "text": "ทำอะไรหล่ะ"
+    },
+    {
+      "id": "32648298506434560354604346014433280",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:48 UTC",
+      "timestampUnix": 1769867808,
+      "type": "text",
+      "text": "เล่นเกมอยู่"
+    },
+    {
+      "id": "32648298547594688172552099987456000",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:50 UTC",
+      "timestampUnix": 1769867810,
+      "type": "text",
+      "text": "ไม่เห็นหรอ"
+    },
+    {
+      "id": "32648298640061280238286367447056384",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:56:55 UTC",
+      "timestampUnix": 1769867815,
+      "type": "text",
+      "text": "เมื่อกี้อยู่ดิสไม่ชวน"
+    },
+    {
+      "id": "32648298684177646367998666742956032",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:56:58 UTC",
+      "timestampUnix": 1769867818,
+      "type": "text",
+      "text": "เกมจบไง"
+    },
+    {
+      "id": "32648298747735036076993462486958080",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:57:01 UTC",
+      "timestampUnix": 1769867821,
+      "type": "text",
+      "text": "ฟังไหมเนี้ย"
+    },
+    {
+      "id": "32648298750404187710738866058035200",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:57:01 UTC",
+      "timestampUnix": 1769867821,
+      "type": "text",
+      "text": "ชวนตอนคนอื่นเล่นเกม"
+    },
+    {
+      "id": "32648298847795359467878782836146176",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:57:06 UTC",
+      "timestampUnix": 1769867826,
+      "type": "text",
+      "text": "มันยังไม่จบไง"
+    },
+    {
+      "id": "32648299134492589826136378582237184",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:57:22 UTC",
+      "timestampUnix": 1769867842,
+      "type": "text",
+      "text": "เล่นให้จบก่อนนนสิ"
+    },
+    {
+      "id": "32648299291428763095310379113250816",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:57:30 UTC",
+      "timestampUnix": 1769867850,
+      "type": "text",
+      "text": "แล้วข้อยมานั่งเถียง"
+    },
+    {
+      "id": "32648299452648860634210096235151360",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:57:39 UTC",
+      "timestampUnix": 1769867859,
+      "type": "text",
+      "text": "งั้นอธิบายมา"
+    },
+    {
+      "id": "32648299520569919887561254961676288",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:57:43 UTC",
+      "timestampUnix": 1769867863,
+      "type": "text",
+      "text": "จะใส่ร้ายคนอื่น"
+    },
+    {
+      "id": "32648299604756783109531358726193152",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:57:47 UTC",
+      "timestampUnix": 1769867867,
+      "type": "text",
+      "text": "เหมือนตอนใส่ร้ายจีเวล"
+    },
+    {
+      "id": "32648299670019242266747275745165312",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:57:51 UTC",
+      "timestampUnix": 1769867871,
+      "type": "text",
+      "text": "แฟร์หรอ"
+    },
+    {
+      "id": "32648299775911780497696976481026048",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:57:57 UTC",
+      "timestampUnix": 1769867877,
+      "type": "text",
+      "text": "มึงอะใส่ร้ายคนอื่น"
+    },
+    {
+      "id": "32648299863248093228859659412045824",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:01 UTC",
+      "timestampUnix": 1769867881,
+      "type": "text",
+      "text": "ยังไง"
+    },
+    {
+      "id": "32648299895090420127039318382346240",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:03 UTC",
+      "timestampUnix": 1769867883,
+      "type": "text",
+      "text": "ไปเล่นให้จบ"
+    },
+    {
+      "id": "32648299988046201398864289441251328",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:08 UTC",
+      "timestampUnix": 1769867888,
+      "type": "text",
+      "text": "หลักฐานฉันก็มี"
+    },
+    {
+      "id": "32648300041607503408500689969610752",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:11 UTC",
+      "timestampUnix": 1769867891,
+      "type": "text",
+      "text": "แล้วข้อยมานั่งเถียง"
+    },
+    {
+      "id": "32648300116322682971639813651824640",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:15 UTC",
+      "timestampUnix": 1769867895,
+      "type": "text",
+      "text": "ไหนวะ"
+    },
+    {
+      "id": "32648300130024112812852025371918336",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:16 UTC",
+      "timestampUnix": 1769867896,
+      "type": "text",
+      "text": "ส่งให้คุณมันก็แล้ว"
+    },
+    {
+      "id": "32648300202162964758424651946786816",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:20 UTC",
+      "timestampUnix": 1769867900,
+      "type": "text",
+      "text": "อย่กเห็นจริวๆ"
+    },
+    {
+      "id": "32648300282577210562904120472109056",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:24 UTC",
+      "timestampUnix": 1769867904,
+      "type": "text",
+      "text": "มันเฉย ทีน*"
+    },
+    {
+      "id": "32648300293634115173709330872532992",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:25 UTC",
+      "timestampUnix": 1769867905,
+      "type": "text",
+      "text": "ไอหลักฐานมึง"
+    },
+    {
+      "id": "32648300406142965548320510196056064",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:31 UTC",
+      "timestampUnix": 1769867911,
+      "type": "text",
+      "text": "ทำไมต้องเผย"
+    },
+    {
+      "id": "32648300532621682783904522634788864",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:38 UTC",
+      "timestampUnix": 1769867918,
+      "type": "text",
+      "text": "แค่ส่งให้เขา"
+    },
+    {
+      "id": "32648300550895876013548595104972800",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:39 UTC",
+      "timestampUnix": 1769867919,
+      "type": "text",
+      "text": "แล้วแต่"
+    },
+    {
+      "id": "32648300571475155935899339435540480",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:40 UTC",
+      "timestampUnix": 1769867920,
+      "type": "text",
+      "text": "เขารับเรื่อง"
+    },
+    {
+      "id": "32648300664250232902778251726815232",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:45 UTC",
+      "timestampUnix": 1769867925,
+      "type": "text",
+      "text": "ไปแล้ว"
+    },
+    {
+      "id": "32648300710968217136182103925325824",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:58:47 UTC",
+      "timestampUnix": 1769867927,
+      "type": "text",
+      "text": "อีกอย่างอะนะ"
+    },
+    {
+      "id": "32648300718731197338209441950990336",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:48 UTC",
+      "timestampUnix": 1769867928,
+      "type": "text",
+      "text": "หูคุยกับทีนแล้ว"
+    },
+    {
+      "id": "32648300887112560734196165234393088",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:58:57 UTC",
+      "timestampUnix": 1769867937,
+      "type": "text",
+      "text": "คุยกับแอดเรียบร้อย"
+    },
+    {
+      "id": "32648300970505217836816777963634688",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:59:02 UTC",
+      "timestampUnix": 1769867942,
+      "type": "text",
+      "text": "เหลือแค่มึง"
+    },
+    {
+      "id": "32648301029539927067539834390183936",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:59:05 UTC",
+      "timestampUnix": 1769867945,
+      "type": "text",
+      "text": "เขาบอกแค่ว่าถ้ามายุ่งกันอีกก็หลุด"
+    },
+    {
+      "id": "32648301052188378272638579125518336",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:59:06 UTC",
+      "timestampUnix": 1769867946,
+      "type": "text",
+      "text": "ตัวดัเนี้ย"
+    },
+    {
+      "id": "32648301134228723013959618335342592",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:59:10 UTC",
+      "timestampUnix": 1769867950,
+      "type": "text",
+      "text": "หมายความว่าหฃุดคู่ไง"
+    },
+    {
+      "id": "32648301151608507410445809485873152",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:59:11 UTC",
+      "timestampUnix": 1769867951,
+      "type": "text",
+      "text": "ป้ายสีกูนะ"
+    },
+    {
+      "id": "32648301210008870005962141851451392",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:59:14 UTC",
+      "timestampUnix": 1769867954,
+      "type": "text",
+      "text": "กูกับมึงอะ"
+    },
+    {
+      "id": "32648301848657415057883786226171904",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:59:49 UTC",
+      "timestampUnix": 1769867989,
+      "type": "text",
+      "text": "เขาบอกว่าถ้ายุ่งกันอีก"
+    },
+    {
+      "id": "32648301907399909415735209645572096",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 13:59:52 UTC",
+      "timestampUnix": 1769867992,
+      "type": "text",
+      "text": "คือหลุดคู่เลย"
+    },
+    {
+      "id": "32648302034086392329821412764155904",
+      "sender": "me",
+      "timestamp": "2026-01-31 13:59:59 UTC",
+      "timestampUnix": 1769867999,
+      "type": "text",
+      "text": "แล้สไง"
+    },
+    {
+      "id": "32648302048255963642136225485160448",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:00 UTC",
+      "timestampUnix": 1769868000,
+      "type": "text",
+      "text": "ฟีลนี้มั้งนะ"
+    },
+    {
+      "id": "32648302109355472277261813152743424",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:00:03 UTC",
+      "timestampUnix": 1769868003,
+      "type": "text",
+      "text": "ทำไรกูได้"
+    },
+    {
+      "id": "32648302183863992966543168728203264",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:07 UTC",
+      "timestampUnix": 1769868007,
+      "type": "text",
+      "text": "คุยกันไปแล้วด้วย"
+    },
+    {
+      "id": "32648302219420258189314992854007808",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:00:09 UTC",
+      "timestampUnix": 1769868009,
+      "type": "text",
+      "text": "กูไม่สน"
+    },
+    {
+      "id": "32648302341542758365148420969070592",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:16 UTC",
+      "timestampUnix": 1769868016,
+      "type": "text",
+      "text": "กูก็ไม่สน"
+    },
+    {
+      "id": "32648302402697865486912169225224192",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:19 UTC",
+      "timestampUnix": 1769868019,
+      "type": "text",
+      "text": "อีกอย่าง"
+    },
+    {
+      "id": "32648302420743761811900012284608512",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:00:20 UTC",
+      "timestampUnix": 1769868020,
+      "type": "text",
+      "text": "อีคนที่เอาแต่คนระดับสูง"
+    },
+    {
+      "id": "32648302577921218493558133750759424",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:29 UTC",
+      "timestampUnix": 1769868029,
+      "type": "text",
+      "text": "ทำไมหรอ"
+    },
+    {
+      "id": "32648302657558487437652955962015744",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:33 UTC",
+      "timestampUnix": 1769868033,
+      "type": "text",
+      "text": "ฉันทำอะไรหรอ"
+    },
+    {
+      "id": "32648302933850481312997278637621248",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:00:48 UTC",
+      "timestampUnix": 1769868048,
+      "type": "text",
+      "text": "หลักฐานอยู่กับคุณทีน"
+    },
+    {
+      "id": "32648303154150851540482114778562560",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:01:00 UTC",
+      "timestampUnix": 1769868060,
+      "type": "text",
+      "text": "อีกอย่างเขาไม่ให้แน่ๆ"
+    },
+    {
+      "id": "32648303399696642497250673750441984",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:01:13 UTC",
+      "timestampUnix": 1769868073,
+      "type": "text",
+      "text": "ก็เข้ามาคุยไหม"
+    },
+    {
+      "id": "32648303523418198683113614347337728",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:01:20 UTC",
+      "timestampUnix": 1769868080,
+      "type": "text",
+      "text": "คุยหรอ"
+    },
+    {
+      "id": "32648303718788144783117391960735744",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:01:30 UTC",
+      "timestampUnix": 1769868090,
+      "type": "text",
+      "text": "โถ่เอก"
+    },
+    {
+      "id": "32648303784757520066726006416736256",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:01:34 UTC",
+      "timestampUnix": 1769868094,
+      "type": "text",
+      "text": "ไม่น่าเลยนะ"
+    },
+    {
+      "id": "32648303921810224600009586904137728",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:01:41 UTC",
+      "timestampUnix": 1769868101,
+      "type": "text",
+      "text": "กลัว?"
+    },
+    {
+      "id": "32648304137715621158444974953463808",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:01:53 UTC",
+      "timestampUnix": 1769868113,
+      "type": "text",
+      "text": "ฉันหลัวด้วยหรอ"
+    },
+    {
+      "id": "32648304233429707178123587846406144",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:01:58 UTC",
+      "timestampUnix": 1769868118,
+      "type": "text",
+      "text": "แค่บอกมา"
+    },
+    {
+      "id": "32648304275221193258738124933038080",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:02:01 UTC",
+      "timestampUnix": 1769868121,
+      "type": "text",
+      "text": "ก็มาดิ"
+    },
+    {
+      "id": "32648304280653777835189661593501696",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:02:01 UTC",
+      "timestampUnix": 1769868121,
+      "type": "text",
+      "text": "ว่าทำอะไร"
+    },
+    {
+      "id": "32648304540871555625864586634199040",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:02:15 UTC",
+      "timestampUnix": 1769868135,
+      "type": "text",
+      "text": "ดิสฉันก็ไม่ค่อยได้เข้า"
+    },
+    {
+      "id": "32648304552604699427667915487313920",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:02:16 UTC",
+      "timestampUnix": 1769868136,
+      "type": "text",
+      "text": "คุยให้ทุกคนรับทราบดีกว่านะ"
+    },
+    {
+      "id": "32648304818543218383969794094268416",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:02:30 UTC",
+      "timestampUnix": 1769868150,
+      "type": "text",
+      "text": "ถ้ามีหลักฐานจริงก็เชิญประจานกูเลยดิ"
+    },
+    {
+      "id": "32648305317851017001425293746896896",
+      "sender": "me",
+      "timestamp": "2026-01-31 14:02:57 UTC",
+      "timestampUnix": 1769868177,
+      "type": "text",
+      "text": "หีือกลัวความจริง?"
+    },
+    {
+      "id": "32648320255821140111960134253543424",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 14:16:27 UTC",
+      "timestampUnix": 1769868987,
+      "type": "placeholder",
+      "text": "Use the latest version of the Instagram app to see this type of message."
+    },
+    {
+      "id": "32648375017205360446380520050262016",
+      "sender": "me",
+      "timestamp": "2026-01-31 15:05:56 UTC",
+      "timestampUnix": 1769871956,
+      "type": "text",
+      "text": "กูละสงใสว่ามึงอยู่กับกูได้ไง"
+    },
+    {
+      "id": "32648383076879858208770443282743296",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 15:13:13 UTC",
+      "timestampUnix": 1769872393,
+      "type": "text",
+      "text": "นั่นสินะ👁️👄👁️"
+    },
+    {
+      "id": "32648476982872341692030122085842944",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:03 UTC",
+      "timestampUnix": 1769877483,
+      "type": "text",
+      "text": "เอก"
+    },
+    {
+      "id": "32648477123230721210066527932383232",
+      "sender": "me",
+      "timestamp": "2026-01-31 16:38:11 UTC",
+      "timestampUnix": 1769877491,
+      "type": "text",
+      "text": "?"
+    },
+    {
+      "id": "32648477124721882214008913246814208",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:11 UTC",
+      "timestampUnix": 1769877491,
+      "type": "text",
+      "text": "ฉันว่าฉันคงต้องบล็อก"
+    },
+    {
+      "id": "32648477152302199574422422573547520",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:12 UTC",
+      "timestampUnix": 1769877492,
+      "type": "text",
+      "text": "บวก"
+    },
+    {
+      "id": "32648477219422743921950881598144512",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:16 UTC",
+      "timestampUnix": 1769877496,
+      "type": "text",
+      "text": "ลบเพื่อนแกแล้ว"
+    },
+    {
+      "id": "32648477298051160432654528431521792",
+      "sender": "me",
+      "timestamp": "2026-01-31 16:38:20 UTC",
+      "timestampUnix": 1769877500,
+      "type": "text",
+      "text": "k"
+    },
+    {
+      "id": "32648477321334198080632955451998208",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:22 UTC",
+      "timestampUnix": 1769877502,
+      "type": "text",
+      "text": "แฟนฉันงอนเนี่ย"
+    },
+    {
+      "id": "32648477457042171864431257045696512",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:29 UTC",
+      "timestampUnix": 1769877509,
+      "type": "text",
+      "text": "คงต้องคุยกันในดิสอีกที"
+    },
+    {
+      "id": "32648477593941676188182679706927104",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:36 UTC",
+      "timestampUnix": 1769877516,
+      "type": "text",
+      "text": "ไอจีอาจจะต้องทำจริงๆ"
+    },
+    {
+      "id": "32648477639349277509566500196843520",
+      "sender": "me",
+      "timestamp": "2026-01-31 16:38:39 UTC",
+      "timestampUnix": 1769877519,
+      "type": "text",
+      "text": "ได้"
+    },
+    {
+      "id": "32648477828231817313495881569271808",
+      "sender": "benj_ivamas",
+      "timestamp": "2026-01-31 16:38:49 UTC",
+      "timestampUnix": 1769877529,
+      "type": "text",
+      "text": "ไปน้า"
+    },
+    {
+      "id": "32648477994840448603999116942376960",
+      "sender": "me",
+      "timestamp": "2026-01-31 16:38:58 UTC",
+      "timestampUnix": 1769877538,
+      "type": "text",
+      "text": "เอาเลย"
+    }
+  ]
+};
+            extractionStats = {"duration":"20s","messageCount":320,"dateRange":{"oldest":"2025-12-08 05:55:53 UTC","newest":"2026-01-31 16:38:58 UTC"},"avgPerDay":5.9,"perSender":{"benj_ivamas":203,"me":117},"typeBreakdown":{"placeholder":11,"text":295,"link":1,"action_log":8,"media":2,"clip":1,"raven_media":2},"initiations":{"benj_ivamas":4,"me":3},"responseTime":{"me":"3m 49s","benj_ivamas":"5m 26s"}};
+        } catch (e) {
+            // Running as an extension page — data arrives via chrome.storage below.
+        }
+        // ============================================
+
+        function startApp() {
+            const messagesContainer = document.getElementById('messagesContainer');
+            const scrollBottomBtn = document.getElementById('scrollBottomBtn');
+            const statusTime = document.getElementById('statusTime');
+            const chatHeader = document.getElementById('chatHeader');
+            const searchBtn = document.getElementById('searchBtn');
+            const cancelSearchBtn = document.getElementById('cancelSearchBtn');
+            const searchBar = document.getElementById('searchBar');
+            const searchInput = document.getElementById('searchInput');
+            const searchCount = document.getElementById('searchCount');
+            const searchUpBtn = document.getElementById('searchUpBtn');
+            const searchDownBtn = document.getElementById('searchDownBtn');
+            const reactionPopupOverlay = document.getElementById('reactionPopupOverlay');
+            const reactorList = document.getElementById('reactorList');
+            const closeReactionPopupBtn = document.getElementById('closeReactionPopup');
+            const lightboxOverlay = document.getElementById('lightboxOverlay');
+            const lightboxImage = document.getElementById('lightboxImage');
+            const lightboxClose = document.getElementById('lightboxClose');
+            const messageInput = document.getElementById('messageInput');
+
+            // IST Timezone (UTC+5:30)
+            // Render times in the viewer's local timezone. (Earlier this was hardcoded
+            // to IST, so exports read the wrong time and grouped onto the wrong day for
+            // everyone outside India.)
+            function toLocal(ts) {
+                return new Date(ts * 1000);
+            }
+
+            function formatISTTime(ts) {
+                const d = toLocal(ts);
+                let h = d.getHours();
+                const m = d.getMinutes().toString().padStart(2, '0');
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                h = h % 12 || 12;
+                return h + ':' + m + ' ' + ampm;
+            }
+
+            function formatISTDateTime(ts) {
+                const d = toLocal(ts);
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ' at ' + formatISTTime(ts);
+            }
+
+            function getDateKey(ts) {
+                const d = toLocal(ts);
+                const year = d.getFullYear();
+                const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                const day = d.getDate().toString().padStart(2, '0');
+                return year + '-' + month + '-' + day;
+            }
+
+            function formatDateLabel(dk) {
+                const parts = dk.split('-');
+                const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                const now = new Date();
+                const today = now.getFullYear() + '-' + (now.getMonth() + 1).toString().padStart(2, '0') + '-' + now.getDate().toString().padStart(2, '0');
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yestKey = yesterday.getFullYear() + '-' + (yesterday.getMonth() + 1).toString().padStart(2, '0') + '-' + yesterday.getDate().toString().padStart(2, '0');
+                
+                if (dk === today) return 'Today';
+                if (dk === yestKey) return 'Yesterday';
+                
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const diff = Math.floor((now - d) / 86400000);
+                if (diff < 7 && diff > 1) return days[d.getDay()];
+                return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+            }
+
+            function getDisplayName(u) {
+                if (u === 'me') return 'You';
+                return (u || '').replace(/^_|_$/g, '');
+            }
+
+            function escapeHtmlText(str) {
+                if (!str) return '';
+                return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            }
+
+            function highlightText(text, query) {
+                if (!query || !text) return text;
+                // text is already HTML-escaped, so escape the query the same way
+                // before matching — otherwise "it's" never matches "it&#39;s".
+                const q = escapeHtmlText(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp('(' + q + ')', 'gi');
+                return text.replace(regex, '<span class="search-highlight-text">$1</span>');
+            }
+
+            function buildReplyPreview(replyTo, sender) {
+                if (!replyTo) return null;
+                const label = replyTo.sender === 'me' ? 'You' : getDisplayName(replyTo.sender);
+                let icon = '💬';
+                if (replyTo.text === '[Photo]' || replyTo.text === '[Media]') icon = '📷';
+                else if (replyTo.text === '[Reel share]') icon = '🎬';
+                
+                let txt = replyTo.text;
+                if (txt === '[Photo]' || txt === '[Media]') txt = 'Photo';
+                if (txt === '[Reel share]') txt = 'Reel';
+                if (txt.length > 50) txt = txt.substring(0, 50) + '...';
+                
+                const w = document.createElement('div');
+                w.className = 'reply-preview ' + (sender === 'me' ? 'sent-reply' : 'received-reply');
+                w.title = 'Reply to ' + label + ': ' + replyTo.text;
+                w.innerHTML = '<div class="reply-bar"></div><div class="reply-content"><span class="reply-sender"><span class="reply-icon">' + icon + '</span> ' + escapeHtmlText(label) + '</span><span class="reply-text">' + escapeHtmlText(txt) + '</span></div>';
+                return w;
+            }
+
+            // Force color emoji presentation — IG sends bare U+2764 etc.,
+            // which otherwise renders as a black text glyph.
+            function emojiFix(s) {
+                return (s || '').replace(/([☀-➿])(?!️)/g, '$1️');
+            }
+
+            function buildReactionBadge(reactions) {
+                if (!reactions || !reactions.length) return null;
+                const uniq = [];
+                for (let i = 0; i < reactions.length; i++) {
+                    if (!uniq.includes(reactions[i].emoji)) uniq.push(reactions[i].emoji);
+                }
+                const b = document.createElement('div');
+                b.className = 'reaction-badge';
+                b.innerHTML = '<span>' + escapeHtmlText(emojiFix(uniq.join(''))) + '</span>' + (reactions.length > 1 ? '<span class="count-display">' + reactions.length + '</span>' : '');
+                b.title = 'Click to see who reacted';
+                b.addEventListener('click', function(e) { e.stopPropagation(); showReactionPopup(reactions); });
+                return b;
+            }
+
+            function buildMessageElement(msg, query) {
+                if (msg._type === 'date_separator') {
+                    const s = document.createElement('div');
+                    s.className = 'date-separator';
+                    s.innerHTML = '<span>' + formatDateLabel(msg._dateKey) + '</span>';
+                    s.setAttribute('data-date-key', msg._dateKey);
+                    s.setAttribute('data-msg-index', msg._globalIndex);
+                    return s;
+                }
+
+                const isMe = msg.sender === 'me';
+                const isAction = msg._isActionLog;
+                const row = document.createElement('div');
+                row.className = 'message-row ' + (isAction ? 'action-log' : (isMe ? 'sent' : 'received'));
+                row.setAttribute('data-msg-index', msg._globalIndex);
+                row.setAttribute('data-date-time', formatISTDateTime(msg.timestampUnix));
+                if (msg._searchMatch) row.setAttribute('data-search-match', 'true');
+
+                if (msg._showSender) {
+                    const sn = document.createElement('div');
+                    sn.className = 'sender-name';
+                    sn.textContent = getDisplayName(msg.sender);
+                    row.appendChild(sn);
+                }
+
+                if (msg.replyTo) {
+                    const rp = buildReplyPreview(msg.replyTo, msg.sender);
+                    if (rp) row.appendChild(rp);
+                }
+
+                let cw = document.createElement('div');
+                cw.style.position = 'relative';
+
+                if (isAction) {
+                    const b = document.createElement('div');
+                    b.className = 'message-bubble';
+                    b.textContent = msg.text;
+                    cw.appendChild(b);
+                } else if ((msg.type === 'media' || msg.type === 'animated_media') && msg.mediaUrl) {
+                    const mb = document.createElement('div');
+                    mb.className = 'media-bubble';
+                    const isVideo = msg.text === '[Video]' || /\.mp4(\?|$)/i.test(msg.mediaUrl);
+                    if (isVideo) {
+                        // Render videos as a playable element — assigning an mp4 to <img>
+                        // fails and mislabels the attachment as a photo.
+                        const v = document.createElement('video');
+                        v.src = msg.mediaUrl;
+                        v.controls = true;
+                        v.preload = 'metadata';
+                        v.style.cssText = 'width:100%;max-height:350px;border-radius:15px;display:block;background:#000;';
+                        v.onerror = function() {
+                            mb.innerHTML = '<div style="width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:#2a2a2a;border-radius:15px;color:#888;">🎬 Video</div>';
+                        };
+                        mb.appendChild(v);
+                    } else {
+                        const img = document.createElement('img');
+                        img.src = msg.mediaUrl;
+                        img.alt = 'Photo';
+                        img.loading = 'lazy';
+                        img.addEventListener('click', function(e) { e.stopPropagation(); openLightbox(msg.mediaUrl); });
+                        img.onerror = function() {
+                            img.style.display = 'none';
+                            mb.innerHTML = '<div style="width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:#2a2a2a;border-radius:15px;color:#888;">📷 Photo</div>';
+                        };
+                        mb.appendChild(img);
+                    }
+                    cw = mb;
+                    cw.style.position = 'relative';
+                } else if (msg.type === 'reel_share' || msg.type === 'clip') {
+                    const owner = msg.reelOwner || ((msg.text || '').match(/@([\w.]+)/) || [])[1] || '';
+                    const rb = document.createElement('div');
+                    rb.className = 'reel-share-bubble';
+                    rb.innerHTML = '<div class="reel-icon"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19" fill="#fff"/></svg></div><div><span class="reel-label">Reel</span><br><span class="reel-owner">' + escapeHtmlText(owner ? '@' + owner : 'Reel') + '</span></div>';
+                    cw.appendChild(rb);
+                    // reel_share text is the sender's comment on the reel — keep it
+                    if (msg.text && msg.text[0] !== '[') {
+                        const b = document.createElement('div');
+                        b.className = 'message-bubble';
+                        b.style.marginTop = '2px';
+                        b.innerHTML = query ? highlightText(escapeHtmlText(msg.text), query) : escapeHtmlText(msg.text);
+                        cw.appendChild(b);
+                    }
+                } else {
+                    const b = document.createElement('div');
+                    b.className = 'message-bubble';
+                    if (/^\[.*\]$/.test(msg.text || '')) b.classList.add('meta');
+                    b.innerHTML = query ? highlightText(escapeHtmlText(msg.text), query) : escapeHtmlText(msg.text);
+                    cw.appendChild(b);
+                }
+
+                if (msg.reactions && msg.reactions.length) {
+                    const badge = buildReactionBadge(msg.reactions);
+                    if (badge) { cw.appendChild(badge); row.classList.add('has-reaction'); }
+                }
+
+                row.appendChild(cw);
+
+                // Permanent link to a shared reel/post/clip. Only render our own
+                // validated https instagram.com permalinks, never arbitrary text.
+                if (msg.permalink && /^https:\/\/www\.instagram\.com\//.test(msg.permalink)) {
+                    const a = document.createElement('a');
+                    a.className = 'permalink-chip';
+                    a.href = msg.permalink;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.textContent = '🔗 Open on Instagram';
+                    row.appendChild(a);
+                }
+
+                if (msg._showTimestamp) {
+                    const ts = document.createElement('div');
+                    ts.className = 'message-timestamp';
+                    ts.textContent = formatISTTime(msg.timestampUnix);
+                    ts.title = formatISTDateTime(msg.timestampUnix);
+                    row.appendChild(ts);
+                }
+
+                return row;
+            }
+
+            function processMessages(msgs) {
+                // Group chat if more than one distinct non-me sender — used to label
+                // incoming bubbles so attribution is not lost (esp. in the PDF).
+                const senders = {};
+                for (let i = 0; i < msgs.length; i++) {
+                    if (msgs[i].sender !== 'me' && msgs[i].type !== 'action_log') senders[msgs[i].sender] = 1;
+                }
+                const isGroup = Object.keys(senders).length > 1;
+                const groups = {};
+                for (let i = 0; i < msgs.length; i++) {
+                    const m = msgs[i];
+                    const dk = getDateKey(m.timestampUnix);
+                    if (!groups[dk]) groups[dk] = [];
+                    groups[dk].push(Object.assign({}, m, { _origIdx: i }));
+                }
+                const result = [];
+                let gi = 0;
+                const sortedDates = Object.keys(groups).sort();
+                for (let d = 0; d < sortedDates.length; d++) {
+                    const dk = sortedDates[d];
+                    result.push({ _type: 'date_separator', _dateKey: dk, _globalIndex: gi++ });
+                    const day = groups[dk];
+                    let cur = null;
+                    const grouped = [];
+                    for (let i = 0; i < day.length; i++) {
+                        const m = day[i];
+                        const prev = i > 0 ? day[i - 1] : null;
+                        const same = prev && prev.sender === m.sender && (m.timestampUnix - prev.timestampUnix) <= 120 && prev.type !== 'action_log';
+                        if (m.type === 'action_log') {
+                            if (cur) { grouped.push(cur); cur = null; }
+                            grouped.push([Object.assign({}, m, { _isActionLog: true })]);
+                        } else if (same && cur && cur[0].sender === m.sender) {
+                            cur.push(m);
+                        } else {
+                            if (cur) grouped.push(cur);
+                            cur = [m];
+                        }
+                    }
+                    if (cur) grouped.push(cur);
+                    for (let g = 0; g < grouped.length; g++) {
+                        const group = grouped[g];
+                        for (let j = 0; j < group.length; j++) {
+                            result.push(Object.assign({}, group[j], {
+                                _globalIndex: gi++,
+                                _showTimestamp: j === group.length - 1,
+                                _showSender: j === 0 && isGroup && group[j].sender !== 'me' && !group[j]._isActionLog,
+                                _isActionLog: group[j]._isActionLog || false
+                            }));
+                        }
+                    }
+                }
+                return result;
+            }
+
+            function renderAllMessages() {
+                messagesContainer.innerHTML = '';
+                if (!chatData || !chatData.messages || !chatData.messages.length) {
+                    messagesContainer.innerHTML = '<div style="text-align:center;color:#8e8e93;padding:40px;">No messages</div>';
+                    return [];
+                }
+                const processed = processMessages(chatData.messages);
+                const frag = document.createDocumentFragment();
+                for (let i = 0; i < processed.length; i++) {
+                    frag.appendChild(buildMessageElement(processed[i], ''));
+                }
+                messagesContainer.appendChild(frag);
+                setTimeout(function() {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, 0);
+                return processed;
+            }
+
+            let allProcessedMessages = [];
+            allProcessedMessages = renderAllMessages() || [];
+
+            // Search
+            let searchMode = false, searchResults = [], searchIdx = -1;
+
+            function enterSearch() {
+                if (searchMode) return;
+                searchMode = true;
+                chatHeader.classList.add('search-mode');
+                searchInput.value = '';
+                searchResults = [];
+                searchIdx = -1;
+                updateSearchUI();
+                setTimeout(function() { searchInput.focus(); }, 100);
+            }
+
+            function exitSearch() {
+                searchMode = false;
+                chatHeader.classList.remove('search-mode');
+                searchInput.value = '';
+                searchResults = [];
+                searchIdx = -1;
+                allProcessedMessages = renderAllMessages() || [];
+            }
+
+            function doSearch(query) {
+                if (!query || query.length < 1) {
+                    searchResults = [];
+                    searchIdx = -1;
+                    updateSearchUI();
+                    allProcessedMessages = renderAllMessages() || [];
+                    return;
+                }
+                searchResults = [];
+                const lq = query.toLowerCase();
+                for (let i = 0; i < allProcessedMessages.length; i++) {
+                    const m = allProcessedMessages[i];
+                    if (m._type === 'date_separator') {
+                        if (formatDateLabel(m._dateKey).toLowerCase().indexOf(lq) !== -1) searchResults.push(i);
+                    } else {
+                        if (m.text && m.text.toLowerCase().indexOf(lq) !== -1) searchResults.push(i);
+                        const ts = formatISTDateTime(m.timestampUnix).toLowerCase();
+                        if (ts.indexOf(lq) !== -1 && searchResults.indexOf(i) === -1) searchResults.push(i);
+                    }
+                }
+                searchIdx = searchResults.length > 0 ? 0 : -1;
+                updateSearchUI();
+                messagesContainer.innerHTML = '';
+                const frag = document.createDocumentFragment();
+                for (let i = 0; i < allProcessedMessages.length; i++) {
+                    const m = allProcessedMessages[i];
+                    const el = buildMessageElement(m, query);
+                    if (searchResults.indexOf(m._globalIndex) !== -1) el.setAttribute('data-search-match', 'true');
+                    frag.appendChild(el);
+                }
+                messagesContainer.appendChild(frag);
+                if (searchResults.length > 0) navigateToResult(0);
+            }
+
+            function updateSearchUI() {
+                if (searchResults.length > 0) {
+                    searchCount.textContent = (searchIdx + 1) + '/' + searchResults.length;
+                } else {
+                    searchCount.textContent = (searchMode && searchInput.value) ? '0/0' : '';
+                }
+                searchUpBtn.disabled = searchResults.length <= 1;
+                searchDownBtn.disabled = searchResults.length <= 1;
+            }
+
+            function navigateToResult(target) {
+                if (!searchResults.length) return;
+                if (target === 'next') searchIdx = (searchIdx + 1) % searchResults.length;
+                else if (target === 'prev') searchIdx = (searchIdx - 1 + searchResults.length) % searchResults.length;
+                else searchIdx = target;
+                updateSearchUI();
+                const idx = searchResults[searchIdx];
+                const el = messagesContainer.querySelector('[data-msg-index="' + idx + '"]');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('search-highlight');
+                    setTimeout(function() { el.classList.remove('search-highlight'); }, 2000);
+                }
+            }
+
+            // Lightbox
+            function openLightbox(url) {
+                lightboxImage.src = url;
+                lightboxOverlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+            function closeLightbox() {
+                lightboxOverlay.classList.remove('active');
+                lightboxImage.src = '';
+                document.body.style.overflow = '';
+            }
+
+            // Reaction popup
+            function showReactionPopup(reactions) {
+                reactorList.innerHTML = '';
+                if (!reactions || !reactions.length) return;
+                const grouped = {};
+                for (let i = 0; i < reactions.length; i++) {
+                    const r = reactions[i];
+                    const k = r.user + '_' + r.emoji;
+                    if (!grouped[k]) grouped[k] = { user: r.user, emoji: r.emoji, count: 0 };
+                    grouped[k].count++;
+                }
+                const reactionCount = Object.keys(grouped).length;
+                document.getElementById('reactionPopupTitle').textContent = 'Reactions (' + reactionCount + ')';
+                const groupedValues = Object.values(grouped);
+                for (let i = 0; i < groupedValues.length; i++) {
+                    const r = groupedValues[i];
+                    const item = document.createElement('div');
+                    item.className = 'reactor-item';
+                    item.innerHTML = '<span class="reactor-emoji">' + escapeHtmlText(emojiFix(r.emoji)) + '</span><span class="reactor-name">' + escapeHtmlText(getDisplayName(r.user)) + (r.count > 1 ? ' (×' + r.count + ')' : '') + '</span>';
+                    reactorList.appendChild(item);
+                }
+                reactionPopupOverlay.classList.add('active');
+            }
+            function hideReactionPopup() {
+                reactionPopupOverlay.classList.remove('active');
+            }
+
+            // Event listeners
+            document.getElementById('printBtn').addEventListener('click', function() { window.print(); });
+            searchBtn.addEventListener('click', enterSearch);
+            cancelSearchBtn.addEventListener('click', exitSearch);
+            searchInput.addEventListener('input', function(e) { doSearch(e.target.value); });
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); navigateToResult(e.shiftKey ? 'prev' : 'next'); }
+                if (e.key === 'Escape') exitSearch();
+            });
+            searchUpBtn.addEventListener('click', function() { navigateToResult('prev'); });
+            searchDownBtn.addEventListener('click', function() { navigateToResult('next'); });
+
+            lightboxClose.addEventListener('click', function(e) { e.stopPropagation(); closeLightbox(); });
+            lightboxOverlay.addEventListener('click', function(e) { if (e.target === lightboxOverlay) closeLightbox(); });
+
+            closeReactionPopupBtn.addEventListener('click', hideReactionPopup);
+            reactionPopupOverlay.addEventListener('click', function(e) { if (e.target === reactionPopupOverlay) hideReactionPopup(); });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (lightboxOverlay.classList.contains('active')) closeLightbox();
+                    else if (reactionPopupOverlay.classList.contains('active')) hideReactionPopup();
+                    else if (searchMode) exitSearch();
+                }
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); enterSearch(); }
+            });
+
+            messagesContainer.addEventListener('scroll', function() {
+                const thresh = 300;
+                const near = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < thresh;
+                if (!near) {
+                    scrollBottomBtn.classList.add('visible');
+                } else {
+                    scrollBottomBtn.classList.remove('visible');
+                }
+            });
+
+            scrollBottomBtn.addEventListener('click', function() {
+                messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+            });
+
+            messageInput.addEventListener('focus', function() { messageInput.parentElement.style.borderColor = 'rgba(255,255,255,0.35)'; });
+            messageInput.addEventListener('blur', function() { messageInput.parentElement.style.borderColor = 'rgba(255,255,255,0.12)'; });
+
+            console.log('✅ Instagram DM Chat Export Loaded');
+            console.log('📊 Messages: ' + (chatData.messages ? chatData.messages.length : 0));
+            console.log('⏰ Times shown in your local timezone');
+            console.log('🔍 Ctrl+F or click search icon to search');
+            console.log('🖼️ Click images for lightbox');
+            console.log('💡 Click reactions to see who reacted');
+        }
+
+        // Wait for images to finish (or 4s), then print. Force eager loading first
+        // so lazy off-screen photos are not blank in the PDF.
+        function printWhenReady() {
+            var imgs = Array.prototype.slice.call(document.images);
+            imgs.forEach(function(i) { i.loading = 'eager'; if (!i.complete && i.getAttribute('src')) i.src = i.src; });
+            var pending = imgs.filter(function(i) { return !i.complete; });
+            var done = false;
+            var go = function() { if (!done) { done = true; window.print(); } };
+            if (!pending.length) { setTimeout(go, 300); return; }
+            var left = pending.length;
+            var tick = function() { if (--left <= 0) go(); };
+            pending.forEach(function(i) { i.addEventListener('load', tick); i.addEventListener('error', tick); });
+            setTimeout(go, 4000);
+        }
+
+        // Fill the header from JS (extension-page mode has no placeholder substitution).
+        function fillHeader(chat, exportedAt) {
+            var messages = chat.messages || [];
+            var name = chat.chatWith || 'Chat';
+            document.title = 'Instagram DM - ' + name;
+            document.getElementById('headerName').textContent = name;
+            document.getElementById('headerAvatar').textContent =
+                name.split(' ').map(function(w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase();
+            document.getElementById('infoBarText').textContent = messages.length + ' messages · Exported with';
+            var last = messages[messages.length - 1];
+            var status = 'No messages';
+            if (last && last.timestampUnix) {
+                var days = Math.floor((Date.now() - last.timestampUnix * 1000) / 86400000);
+                status = days <= 0 ? 'Active now' : days === 1 ? 'Active yesterday'
+                    : days < 7 ? 'Active ' + days + 'd ago' : 'Active ' + Math.floor(days / 7) + 'w ago';
+            } else if (last) { status = 'Active recently'; }
+            document.getElementById('headerStatus').textContent = status;
+            var d = new Date(exportedAt || Date.now());
+            var h = d.getHours(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+            document.getElementById('statusTime').textContent = h + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + ap;
+            var mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            document.getElementById('statusDate').textContent = mo[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        }
+
+        if (chatData) {
+            // Saved-file mode: data + header baked in via placeholders.
+            startApp();
+            if (location.hash.indexOf('print') !== -1) printWhenReady();
+        } else if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            // Extension-page mode: popup stashed the chat, opened this page with #print.
+            chrome.storage.local.get('igdmPendingPdf', function(r) {
+                var d = r && r.igdmPendingPdf;
+                if (!d || !d.chat) {
+                    document.body.textContent = 'No chat data found. Export a conversation from the extension popup first.';
+                    return;
+                }
+                chatData = d.chat;
+                extractionStats = d.stats || {};
+                fillHeader(d.chat, d.exportedAt);
+                startApp();
+                chrome.storage.local.remove('igdmPendingPdf');
+                if (location.hash.indexOf('print') !== -1) printWhenReady();
+            });
+        } else {
+            document.body.textContent = 'No chat data in this file. Export it again from the extension popup.';
+        }
+
+</script>
+</body>
+</html>
